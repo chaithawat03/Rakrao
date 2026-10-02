@@ -3,6 +3,7 @@ using RakRao.Infrastructure.Persistence;
 
 namespace RakRao.IntegrationTests;
 
+[Collection("PostgreSQL")]
 public class DatabaseSmokeTests
 {
     [Fact]

@@ -48,6 +48,8 @@ The table describes the target API across phases. [Phase 1](phase-1-plan.md) imp
 
 Future route: `GET /api/v1/families/{familyId}/relationships/path?fromPersonId=&toPersonId=&policy=` returns authorized path steps, edge directions, confidence/ambiguity and optional kinship label. It is deliberately outside Phase 1, but uses the same typed relationships and visibility rules.
 
+For Milestone 2, both successful `/me` operations return `{ id, displayName, onboardingState: "NEW_MEMBER", families: [] }`. `GET /me` returns 404 with `USER_NOT_PROVISIONED` until the authenticated caller has used `POST /me`. A User record is an application principal and does not imply a Person link or Family membership.
+
 ## Name DTOs and search contract
 
 Person creation requires `primaryName: { fullDisplayName, firstName?, middleName?, lastName?, nameType?, effectiveFrom? }`. `POST .../names` accepts the same name fields plus `makePrimary`, optional `effectiveTo` for a historical entry, optional `visibilityOverride`, and reviewer-only `notes`. When `makePrimary = true`, the service closes the previous current primary and creates the new row in one transaction. It increments the Person aggregate version and checks `If-Match`; a stale concurrent change returns 409. Historical corrections use the name-row ID and are audited separately. The API never mutates a former row into a new life-event record.

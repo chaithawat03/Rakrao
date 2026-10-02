@@ -76,6 +76,80 @@ h1 {
   color: #5a6860;
 }
 
+.auth-panel {
+  width: min(100%, 26rem);
+  margin-top: 2rem;
+  padding: 1.5rem;
+  border: 1px solid #d5ded0;
+  border-radius: 1rem;
+  background: #fffdf8;
+  box-shadow: 0 12px 35px #283b3314;
+}
+
+.auth-panel h2 {
+  margin-top: 0;
+}
+
+.auth-panel form {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.auth-panel label {
+  font-weight: 650;
+}
+
+.auth-panel input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #98aa9e;
+  border-radius: 0.5rem;
+  font: inherit;
+}
+
+.auth-panel button {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.8rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: #245d48;
+  color: white;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-panel button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.auth-panel button:focus-visible,
+.auth-panel input:focus-visible {
+  outline: 3px solid #bd8050;
+  outline-offset: 3px;
+}
+
+.auth-divider,
+.muted {
+  color: #5a6860;
+}
+
+.auth-divider {
+  margin-top: 1.25rem;
+  text-align: center;
+}
+
+.auth-error {
+  width: min(100%, 26rem);
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: #fae9e3;
+  color: #833827;
+}
+
 @media (max-width: 520px) {
   .page-shell {
     gap: 22vh;

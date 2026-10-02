@@ -49,6 +49,8 @@ Use `WITH RECURSIVE` for ancestors, descendants and graph expansion, with explic
 
 Migration order: (1) users and audit infrastructure before exposing mutations; (2) families, memberships, grants and review workflows; (3) persons, person_names and family associations; (4) basic same-family relationships for Phase 1; (5) relationship approvals with cross-family publication and photos in later phases. Review migrations with restore guidance and test on realistic data. [PostgreSQL recursive query documentation](https://www.postgresql.org/docs/current/queries-with.html) describes cycle detection.
 
+Milestone 2 creates only `users` and `audit_events`; the nullable `audit_events.family_id` column receives its Family foreign key when `families` is migrated in Milestone 3. The Milestone 1 migration contains no business rows, so this migration has no backfill. Keep existing databases and apply the new migration in place; do not recreate them to add these tables.
+
 
 
 
