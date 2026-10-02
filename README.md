@@ -64,7 +64,7 @@ Review the migration and data/backfill strategy before applying it. Do not use `
 
 ```powershell
 cd apps/web
-npm install
+npm ci
 npm run typecheck
 npm run lint
 npm run build
@@ -73,6 +73,16 @@ npm run dev
 ```
 
 The shell is served at the URL printed by Vite. Its API base URL defaults to relative `/api`. The local Vite proxy forwards `/api` to `http://127.0.0.1:5080`; the proxy target lives in one development config file, not in components. Copy `.env.example` to `.env.local` only if you need local overrides. Never place credentials in `VITE_` variables because Vite exposes them to the browser.
+
+On this workstation, the npm user config forces offline mode and its proxy entries return HTTP 400. The existing approved environment proxy works with a command-local, empty npm user config. If the same condition occurs, run this from the repository root; `.npmrc.local` and `.npm-cache` are ignored by Git:
+
+```powershell
+New-Item -ItemType File -Path .npmrc.local -Force | Out-Null
+cd apps/web
+npm ci --offline=false --userconfig ..\..\.npmrc.local --cache ..\..\.npm-cache
+```
+
+This does not change system proxy settings or disable TLS validation. Coordinate with IT before changing the corporate npm configuration itself.
 
 ## Backend tests
 
@@ -89,4 +99,4 @@ Without PostgreSQL, run the unit and API health smoke tests:
 dotnet test RakRao.sln --filter 'Category!=Database'
 ```
 
-CI starts an isolated PostgreSQL service and runs the full backend suite. Frontend CI currently uses `npm install` because this machine cannot reach the npm registry to generate a lockfile. Once a lockfile is generated and committed, switch local setup and CI to `npm ci`. CI has no deployment job or cloud credentials.
+CI starts an isolated PostgreSQL service and runs the full backend suite. Frontend CI installs from the committed lockfile with `npm ci`, then runs typecheck, lint, formatting, build and tests. CI has no deployment job or cloud credentials.
