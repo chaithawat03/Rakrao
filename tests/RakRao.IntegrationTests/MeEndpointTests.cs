@@ -5,10 +5,10 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 using RakRao.Application.Identity;
 using RakRao.Infrastructure.Persistence;
 
@@ -20,14 +20,16 @@ public class MeEndpointTests
     private static WebApplicationFactory<Program> Factory(string? connectionString = null, ILoggerProvider? loggerProvider = null) => new WebApplicationFactory<Program>()
         .WithWebHostBuilder(builder =>
         {
-            if (connectionString is not null)
-                builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                    new Dictionary<string, string?> { ["ConnectionStrings:Default"] = connectionString }));
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<IFirebaseIdTokenVerifier>();
                 services.AddSingleton<IFirebaseIdTokenVerifier>(new FakeVerifier());
                 if (loggerProvider is not null) services.AddLogging(logging => logging.AddProvider(loggerProvider));
+                if (connectionString is not null)
+                {
+                    services.RemoveAll<DbContextOptions<RakRaoDbContext>>();
+                    services.AddDbContext<RakRaoDbContext>(options => options.UseNpgsql(connectionString));
+                }
             });
         });
 
@@ -50,6 +52,20 @@ public class MeEndpointTests
         var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>();
         Assert.Equal("AUTHENTICATION_REQUIRED", problem?.Code);
         Assert.Equal("me-auth-check", problem?.RequestId);
+    }
+
+    [Fact]
+    public void Test_factory_uses_its_explicit_database_connection()
+    {
+        const string connectionString = "Host=127.0.0.1;Port=5441;Database=rk_factory_test;Username=test_user;Password=test_password";
+        using var factory = Factory(connectionString);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<RakRaoDbContext>();
+        var actual = new NpgsqlConnectionStringBuilder(db.Database.GetDbConnection().ConnectionString);
+
+        Assert.True(actual.Database == "rk_factory_test" && actual.Port == 5441 &&
+            actual.Username == "test_user" && actual.Password == "test_password",
+            "The API test factory did not use its supplied database connection string.");
     }
 
     [Fact]
