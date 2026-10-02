@@ -1,0 +1,31 @@
+# Build output and local tools
+**/bin/
+**/obj/
+**/node_modules/
+**/dist/
+**/coverage/
+.dotnet-home/
+.npm-cache/
+.npmrc.local
+.tools/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+.secrets/
+credentials/
+*service-account*.json
+*.p12
+*.pfx
+*.pem
+
+# IDE and OS
+.vs/
+.vscode/
+*.user
+*.suo
+.DS_Store
+Thumbs.db

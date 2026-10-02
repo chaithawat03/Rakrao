@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: rakrao
+          POSTGRES_PASSWORD: rakrao_ci_only
+          POSTGRES_DB: rakrao_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rakrao -d rakrao_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      RAKRAO_TEST_CONNECTION_STRING: Host=localhost;Port=5432;Database=rakrao_test;Username=rakrao;Password=rakrao_ci_only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore RakRao.sln
+      - run: dotnet build RakRao.sln --no-restore
+      - run: dotnet test RakRao.sln --no-build --no-restore
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
