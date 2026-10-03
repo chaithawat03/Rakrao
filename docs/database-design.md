@@ -24,7 +24,7 @@ Birth and death may be approximate: `birth_year`, `birth_month`, `birth_day` and
 | `relationships` | `id PK`, `person_a_id FK`, `person_b_id FK`, `type`, `kind`, `started_on`, `ended_on`, `end_reason`, `status`, `created_by_user_id FK`, audit fields, `version` | Distinct endpoints; directed parent/child; canonical ordered union pair; dates ordered; end reason requires end date; statuses `PENDING,ACTIVE,REJECTED`; indexes on each endpoint with type/status; restrict FKs |
 | `relationship_approvals` | `relationship_id FK`, `family_id FK`, nullable `reviewer_user_id FK`, `decision`, `decided_at`, `note`; composite PK `(relationship_id,family_id)` | `PENDING,APPROVED,REJECTED`; publication checks complete required family set; restrict FKs |
 | `person_photos` | `id PK`, `person_id FK`, `object_key`, `content_type`, `byte_size`, `status`, `is_current`, `uploaded_by_user_id FK`, audit fields | Unique object key; one current ready photo/person via partial unique index; `PENDING,READY,REJECTED,DELETED`; restrict FKs |
-| `audit_events` | `id PK`, `occurred_at`, nullable `actor_user_id FK`, `action`, `target_type`, `target_id`, nullable `family_id FK`, `request_id`, `reason`, `safe_diff jsonb` | Append-only application privileges; indexes `(target_type,target_id,occurred_at DESC)` and `(family_id,occurred_at DESC)`; no raw tokens, OTPs, photos or evidence |
+| `audit_events` | `id PK`, `occurred_at`, nullable `actor_user_id FK`, `action`, `target_type`, `target_id`, nullable `family_id FK`, `request_id`, `reason`, `safe_diff jsonb` | Append-only: PostgreSQL rejects UPDATE, DELETE and TRUNCATE; indexes `(target_type,target_id,occurred_at DESC)` and `(family_id,occurred_at DESC)`; no raw tokens, OTPs, photos or evidence |
 
 `family_persons` and `family_memberships` intentionally answer different questions. A person may be in several families without an account, and a user may join several families before a claim is approved. `relationship_approvals` rows are generated for all families affected by a cross-family edge. The publishing transaction checks the complete required set and reviewer authority.
 
@@ -50,6 +50,8 @@ Use `WITH RECURSIVE` for ancestors, descendants and graph expansion, with explic
 Migration order: (1) users and audit infrastructure before exposing mutations; (2) families, memberships, grants and review workflows; (3) persons, person_names and family associations; (4) basic same-family relationships for Phase 1; (5) relationship approvals with cross-family publication and photos in later phases. Review migrations with restore guidance and test on realistic data. [PostgreSQL recursive query documentation](https://www.postgresql.org/docs/current/queries-with.html) describes cycle detection.
 
 Milestone 2 creates only `users` and `audit_events`; the nullable `audit_events.family_id` column receives its Family foreign key when `families` is migrated in Milestone 3. The Milestone 1 migration contains no business rows, so this migration has no backfill. Keep existing databases and apply the new migration in place; do not recreate them to add these tables.
+
+The follow-up Milestone 2 migration installs PostgreSQL triggers that reject UPDATE, DELETE and TRUNCATE on `audit_events`, including direct SQL that bypasses EF Core. INSERT remains available to the audit writer. A deployed API should use a non-owner database role granted only the required application privileges; table owners can alter triggers, so the migration does not replace deployment role separation.
 
 
 
