@@ -53,6 +53,8 @@ Milestone 2 creates only `users` and `audit_events`; the nullable `audit_events.
 
 The follow-up Milestone 2 migration installs PostgreSQL triggers that reject UPDATE, DELETE and TRUNCATE on `audit_events`, including direct SQL that bypasses EF Core. INSERT remains available to the audit writer. A deployed API should use a non-owner database role granted only the required application privileges; table owners can alter triggers, so the migration does not replace deployment role separation.
 
+Milestone 3 adds `families`, `family_memberships` and `role_assignments` to an existing database, then binds nullable `audit_events.family_id` to `families.id`. Milestone 2 wrote no family-linked audit rows, so no row backfill is required. The second Milestone 3 migration adds a normalized family-name index, a nonblank-name check, an audit retry lookup index, and deferred constraint triggers on Family, Membership and RoleAssignment changes. At transaction commit, each active Family must have at least one active membership with an unrevoked Creator grant. The trigger locks the Family row before checking, so concurrent direct database changes serialize as API role changes do. Statement triggers reject `TRUNCATE` of memberships or role assignments because it bypasses row triggers. Creation audit metadata holds hashes of the retry key and original request; it holds neither the raw key nor family details. If preexisting data violates the invariant, migration stops for review rather than inventing a Creator. Roll back only the guard migration to remove its triggers; rolling back the tables deletes family data and is not a recovery plan. Back up the database before applying this schema in a shared environment.
+
 
 
 

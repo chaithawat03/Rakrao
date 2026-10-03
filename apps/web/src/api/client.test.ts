@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { provisionMe } from './client';
+import { createFamily, provisionMe } from './client';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -41,6 +41,47 @@ describe('authenticated API bootstrap', () => {
     );
     await expect(provisionMe('private-test-token')).rejects.toThrow(
       'Account setup failed with status 401',
+    );
+  });
+});
+
+describe('family API', () => {
+  it('sends family creation with the token in the authorization header', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            id: 'family-1',
+            name: 'Our family',
+            description: null,
+            roles: ['CREATOR'],
+            capabilities: ['READ_FAMILY'],
+          }),
+          {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+    );
+    vi.stubGlobal('fetch', fetcher);
+
+    const family = await createFamily(
+      'private-test-token',
+      { name: 'Our family', description: '' },
+      'stable-create-key',
+    );
+
+    expect(family.id).toBe('family-1');
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/families',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer private-test-token',
+          'Idempotency-Key': 'stable-create-key',
+        }),
+        body: JSON.stringify({ name: 'Our family', description: '' }),
+      }),
     );
   });
 });

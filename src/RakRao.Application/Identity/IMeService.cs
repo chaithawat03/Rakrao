@@ -1,7 +1,9 @@
+using RakRao.Application.Families;
+
 namespace RakRao.Application.Identity;
 
 public sealed record MeResponse(Guid Id, string? DisplayName, string OnboardingState,
-    IReadOnlyList<object> Families);
+    IReadOnlyList<FamilySummary> Families);
 
 public interface IMeService
 {

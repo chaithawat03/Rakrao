@@ -2,8 +2,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RakRao.Application.Audit;
+using RakRao.Application.Families;
 using RakRao.Application.Identity;
 using RakRao.Infrastructure.Audit;
+using RakRao.Infrastructure.Families;
 using RakRao.Infrastructure.Identity;
 using RakRao.Infrastructure.Persistence;
 
@@ -21,6 +23,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IFirebaseIdTokenVerifier, FirebaseIdTokenVerifier>();
         services.AddScoped<IAuditWriter, EfAuditWriter>();
         services.AddScoped<IMeService, EfMeService>();
+        services.AddScoped<IFamilyService, EfFamilyService>();
         return services;
     }
 }

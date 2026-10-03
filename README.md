@@ -1,6 +1,6 @@
 # รากเรา / RAKRAO
 
-RAKRAO (Our Roots) is a private-first family relationship platform. The repository contains the Phase 1 Milestone 1 foundation and the Milestone 2 authenticated User and audit baseline. Family, Person and tree workflows belong to later milestones.
+RAKRAO (Our Roots) is a private-first family relationship platform. The repository contains the Phase 1 Milestone 1 foundation, Milestone 2 verified identity and audit baseline, and Milestone 3 family and scoped-role workflows. Invitations, Person records and trees belong to later milestones.
 
 The backend is a modular ASP.NET Core monolith with Domain, Application, Infrastructure and API projects. PostgreSQL is the database. The web shell uses React and TypeScript. See [docs/architecture.md](docs/architecture.md), [docs/product-decisions.md](docs/product-decisions.md) and [docs/phase-1-plan.md](docs/phase-1-plan.md) for the approved design.
 
@@ -49,7 +49,7 @@ dotnet tool run dotnet-ef database update --project src/RakRao.Infrastructure --
 dotnet run --project src/RakRao.Api --urls http://127.0.0.1:5080
 ```
 
-In another terminal, check `http://127.0.0.1:5080/health` for API liveness and `/health/ready` for database connectivity. The initial migration creates EF Core migration tracking only. The Milestone 2 migration adds `users` and `audit_events`. No backfill is needed because Milestone 1 had no business rows. Apply migrations to an existing development database before testing `/api/v1/me`.
+In another terminal, check `http://127.0.0.1:5080/health` for API liveness and `/health/ready` for database connectivity. The initial migration creates EF Core migration tracking only. Milestone 2 adds `users` and append-only `audit_events`. Milestone 3 adds `families`, `family_memberships`, `role_assignments`, the audit Family foreign key, and a deferred PostgreSQL guard that rejects any active Family without an active Creator. Existing User and audit rows need no backfill: Milestone 2 creates no Families and its `audit_events.family_id` values are null. Before upgrading an independently modified database, check for non-null audit Family IDs with no Family row. Apply migrations in place; do not recreate development or staging data.
 
 When a later milestone has an approved schema change, create a migration with:
 
@@ -82,7 +82,13 @@ For live local development, obtain the Web app's public `apiKey`, `authDomain`, 
 
 For isolated local development, run `firebase emulators:start --only auth --project demo-rakrao`. Set `Firebase__ProjectId=demo-rakrao` and `FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099` in the API process environment, then set `VITE_FIREBASE_PROJECT_ID=demo-rakrao`, `VITE_FIREBASE_AUTH_EMULATOR_URL=http://127.0.0.1:9099` and non-secret demo Firebase Web configuration in `apps/web/.env.local`. Start the API and web app using the commands above. The backend refuses emulator mode outside Development. The emulator avoids live SMS; automated tests use a verifier double for endpoint behavior and an unsigned emulator-mode token to check the official Admin SDK adapter's claim boundary. CI sends no SMS and needs no Firebase secret.
 
-After Google or phone sign-in, the browser sends the Firebase ID token as a bearer token to `POST /api/v1/me`. The API verifies the principal and provisions one application User; `GET /api/v1/me` returns that User with `NEW_MEMBER` and an empty `families` list in Milestone 2. An authenticated `GET` before provisioning returns 404. Neither sign-in method claims a Person or grants Family access. Phone verification uses Firebase's reCAPTCHA flow, and test phone numbers for live development must be configured in Firebase rather than committed to source.
+After Google or phone sign-in, the browser sends the Firebase ID token as a bearer token to `POST /api/v1/me`. The API verifies the principal and provisions one application User; `GET /api/v1/me` returns `NEW_MEMBER` with an empty family list until a Family is created, then `ACTIVE_MEMBER` with authorized family summaries. An authenticated `GET` before provisioning returns 404. Neither sign-in method claims a Person or grants Family access. Phone verification uses Firebase's reCAPTCHA flow, and test phone numbers for live development must be configured in Firebase rather than committed to source.
+
+## Milestone 3 family workflow
+
+Signed-in, provisioned Users can create a Family in the web shell. Creation writes the Family, active creator membership, Creator and FamilyAdmin grants, and one audit event in a single PostgreSQL transaction. The API resolves family access from active memberships and current grants. `GET /api/v1/families` and `GET /api/v1/families/{familyId}` expose only authorized Families; the web switcher uses those summaries and keeps its selection in the URL query. Creator and FamilyAdmin can edit family metadata using the returned version and `If-Match`; stale edits return 409. Creator can grant or revoke Creator and FamilyAdmin roles for active members, while FamilyAdmin can manage FamilyMember grants. The family row is locked for role changes, and a deferred database guard rejects removal of the last active Creator even through direct SQL.
+
+Family creation is limited to three per User per hour by `FamilyCreation:MaxPerHour` (override with `FamilyCreation__MaxPerHour`). The database audit count under a User row lock enforces the limit across API instances. A new request over the limit returns 429. The web client sends a stable `Idempotency-Key` on retry; the API stores hashes of the key and original request in the audit event and returns the original Family for the same User and request body, even after a later Family edit or the hourly limit is reached. Invitations and membership review are Milestone 4 and are not available yet; no membership approval or Person identity claim occurs during family creation.
 
 On this workstation, the npm user config forces offline mode and its proxy entries return HTTP 400. The existing approved environment proxy works with a command-local, empty npm user config. If the same condition occurs, run this from the repository root; `.npmrc.local` and `.npm-cache` are ignored by Git:
 

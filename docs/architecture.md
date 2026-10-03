@@ -2,7 +2,7 @@
 
 ## Purpose
 
-RAKRAO (รากเรา) is a family relationship platform where people can appear in trees without accounts, accounts can later claim people, and families can stay separate or connect. This is a reviewable design baseline, not authorization to implement. The [name-history addendum](../Foundation_02102026_0940.md) extends the original brief.
+RAKRAO (รากเรา) is a family relationship platform where people can appear in trees without accounts, accounts can later claim people, and families can stay separate or connect. This reviewed design baseline guides Phase 1 implementation. The [name-history addendum](../Foundation_02102026_0940.md) extends the original brief.
 
 ## Selected architecture
 

@@ -1,6 +1,6 @@
 # Phase 0 product decisions
 
-Status: approved MVP direction from [Finalize Phase 0 prompt](<../Codex Prompt — Finalize Phase 0.md>). These decisions supersede earlier working assumptions in the architecture package. No application has been implemented.
+Status: approved MVP direction from [Finalize Phase 0 prompt](<../Codex Prompt — Finalize Phase 0.md>). These decisions supersede earlier working assumptions in the architecture package. Phase 1 implementation now follows this record.
 
 ## Product identity and naming
 

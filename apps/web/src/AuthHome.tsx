@@ -1,14 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { provisionMe as defaultProvisionMe } from './api/client';
-import type { MeResponse } from './api/client';
+import {
+  createFamily as defaultCreateFamily,
+  provisionMe as defaultProvisionMe,
+  updateFamily as defaultUpdateFamily,
+} from './api/client';
+import type { FamilyInput, FamilySummary, MeResponse } from './api/client';
 import { firebaseGateway } from './auth/firebaseGateway';
-import type { AuthGateway, PhoneChallenge } from './auth/gateway';
+import type {
+  AuthGateway,
+  AuthPrincipal,
+  PhoneChallenge,
+} from './auth/gateway';
 import { productCopy } from './content';
 
 interface AuthHomeProps {
   auth?: AuthGateway;
   provisionMe?: (idToken: string) => Promise<MeResponse>;
+  createFamily?: (
+    idToken: string,
+    input: FamilyInput,
+    idempotencyKey: string,
+  ) => Promise<FamilySummary>;
+  updateFamily?: (
+    idToken: string,
+    familyId: string,
+    version: number,
+    input: FamilyInput,
+  ) => Promise<FamilySummary>;
 }
 
 function safeAuthError(error: unknown): string {
@@ -30,16 +49,26 @@ function safeAuthError(error: unknown): string {
 export default function AuthHome({
   auth = firebaseGateway,
   provisionMe = defaultProvisionMe,
+  createFamily = defaultCreateFamily,
+  updateFamily = defaultUpdateFamily,
 }: AuthHomeProps) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [principal, setPrincipal] = useState<AuthPrincipal | null>(null);
+  const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
+  const [familyName, setFamilyName] = useState('');
+  const [familyDescription, setFamilyDescription] = useState('');
+  const [editingFamily, setEditingFamily] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [code, setCode] = useState('');
   const [challenge, setChallenge] = useState<PhoneChallenge | null>(null);
   const generation = useRef(0);
+  const creationAttempt = useRef<{ input: string; key: string } | null>(null);
 
   useEffect(() => {
     let unsubscribe = () => {};
@@ -48,7 +77,11 @@ export default function AuthHome({
         (principal) => {
           const current = ++generation.current;
           setSignedIn(Boolean(principal));
+          setPrincipal(principal);
           setMe(null);
+          setSelectedFamilyId(null);
+          setBusy(false);
+          creationAttempt.current = null;
           setError(null);
           setChallenge(null);
           if (!principal) {
@@ -60,7 +93,17 @@ export default function AuthHome({
             .getIdToken()
             .then((token) => provisionMe(token))
             .then((user) => {
-              if (generation.current === current) setMe(user);
+              if (generation.current === current) {
+                setMe(user);
+                const requested = new URLSearchParams(
+                  window.location.search,
+                ).get('family');
+                selectFamily(
+                  user.families.find((family) => family.id === requested)?.id ||
+                    user.families[0]?.id ||
+                    null,
+                );
+              }
             })
             .catch(() => {
               if (generation.current === current)
@@ -73,7 +116,11 @@ export default function AuthHome({
         () => {
           generation.current += 1;
           setSignedIn(false);
+          setPrincipal(null);
           setMe(null);
+          setSelectedFamilyId(null);
+          setBusy(false);
+          creationAttempt.current = null;
           setChallenge(null);
           setError('Authentication session could not be loaded.');
           setLoading(false);
@@ -82,7 +129,11 @@ export default function AuthHome({
     } catch {
       generation.current += 1;
       setSignedIn(false);
+      setPrincipal(null);
       setMe(null);
+      setSelectedFamilyId(null);
+      setBusy(false);
+      creationAttempt.current = null;
       setError('Firebase authentication is not configured.');
       setLoading(false);
     }
@@ -145,6 +196,105 @@ export default function AuthHome({
     }
   }
 
+  async function handleCreateFamily(event: FormEvent) {
+    event.preventDefault();
+    if (!principal || !me) return;
+    const current = generation.current;
+    setBusy(true);
+    setError(null);
+    try {
+      const idToken = await principal.getIdToken();
+      const input = {
+        name: familyName.trim(),
+        description: familyDescription.trim(),
+      };
+      const fingerprint = JSON.stringify(input);
+      if (creationAttempt.current?.input !== fingerprint)
+        creationAttempt.current = {
+          input: fingerprint,
+          key: crypto.randomUUID(),
+        };
+      const created = await createFamily(
+        idToken,
+        input,
+        creationAttempt.current.key,
+      );
+      if (generation.current !== current) return;
+      creationAttempt.current = null;
+      setMe((existing) =>
+        existing
+          ? {
+              ...existing,
+              onboardingState: 'ACTIVE_MEMBER',
+              families: [...existing.families, created],
+            }
+          : existing,
+      );
+      selectFamily(created.id);
+      setFamilyName('');
+      setFamilyDescription('');
+    } catch {
+      if (generation.current === current)
+        setError('Family creation failed. Please try again later.');
+    } finally {
+      if (generation.current === current) setBusy(false);
+    }
+  }
+
+  function selectFamily(id: string | null) {
+    setSelectedFamilyId(id);
+    setEditingFamily(false);
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set('family', id);
+    else url.searchParams.delete('family');
+    window.history.replaceState(null, '', url);
+  }
+
+  async function handleUpdateFamily(event: FormEvent) {
+    event.preventDefault();
+    if (!principal || !selectedFamily) return;
+    const current = generation.current;
+    const familyId = selectedFamily.id;
+    setBusy(true);
+    setError(null);
+    try {
+      const token = await principal.getIdToken();
+      const updated = await updateFamily(
+        token,
+        familyId,
+        selectedFamily.version,
+        {
+          name: editName.trim(),
+          description: editDescription.trim(),
+        },
+      );
+      if (generation.current !== current) return;
+      setMe(
+        (existing) =>
+          existing && {
+            ...existing,
+            families: existing.families.map((family) =>
+              family.id === familyId ? updated : family,
+            ),
+          },
+      );
+      setEditingFamily(false);
+    } catch (failure) {
+      if (generation.current === current)
+        setError(
+          failure instanceof Error && failure.message.endsWith('status 409')
+            ? 'Family details changed elsewhere. Reload this page before editing again.'
+            : 'Family update failed. Please try again.',
+        );
+    } finally {
+      if (generation.current === current) setBusy(false);
+    }
+  }
+
+  const selectedFamily = me?.families.find(
+    (family) => family.id === selectedFamilyId,
+  );
+
   return (
     <main className="page-shell">
       <div className="brand-mark" aria-label={productCopy.brand}>
@@ -168,7 +318,104 @@ export default function AuthHome({
           <div className="auth-panel">
             <h2>Account ready</h2>
             <p>{me.displayName || 'Your RAKRAO account'}</p>
-            <p className="muted">No family memberships yet.</p>
+            {me.families.length === 0 ? (
+              <p className="muted">No family memberships yet.</p>
+            ) : (
+              <div className="family-section">
+                <label htmlFor="current-family">Current family</label>
+                <select
+                  id="current-family"
+                  value={selectedFamily?.id || ''}
+                  onChange={(event) => selectFamily(event.target.value)}
+                >
+                  {me.families.map((family) => (
+                    <option key={family.id} value={family.id}>
+                      {family.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedFamily && (
+                  <section aria-label="Selected family">
+                    <h3>{selectedFamily.name}</h3>
+                    {selectedFamily.description && (
+                      <p>{selectedFamily.description}</p>
+                    )}
+                    {selectedFamily.capabilities.includes('EDIT_FAMILY') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditName(selectedFamily.name);
+                          setEditDescription(selectedFamily.description || '');
+                          setEditingFamily(true);
+                        }}
+                      >
+                        Edit family
+                      </button>
+                    )}
+                    {editingFamily &&
+                      selectedFamily.capabilities.includes('EDIT_FAMILY') && (
+                        <form
+                          onSubmit={(event) => void handleUpdateFamily(event)}
+                        >
+                          <label htmlFor="edit-family-name">
+                            Edit family name
+                          </label>
+                          <input
+                            id="edit-family-name"
+                            required
+                            maxLength={160}
+                            value={editName}
+                            onChange={(event) =>
+                              setEditName(event.target.value)
+                            }
+                          />
+                          <label htmlFor="edit-family-description">
+                            Edit description
+                          </label>
+                          <input
+                            id="edit-family-description"
+                            maxLength={2000}
+                            value={editDescription}
+                            onChange={(event) =>
+                              setEditDescription(event.target.value)
+                            }
+                          />
+                          <button type="submit" disabled={busy}>
+                            Save family
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingFamily(false)}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      )}
+                  </section>
+                )}
+              </div>
+            )}
+            <form onSubmit={(event) => void handleCreateFamily(event)}>
+              <h3>Create a family</h3>
+              <label htmlFor="family-name">Family name</label>
+              <input
+                id="family-name"
+                required
+                maxLength={160}
+                value={familyName}
+                onChange={(event) => setFamilyName(event.target.value)}
+              />
+              <label htmlFor="family-description">Description</label>
+              <input
+                id="family-description"
+                maxLength={2000}
+                value={familyDescription}
+                onChange={(event) => setFamilyDescription(event.target.value)}
+              />
+              <button type="submit" disabled={busy}>
+                Create family
+              </button>
+            </form>
             <button
               type="button"
               onClick={() => void handleSignOut()}
