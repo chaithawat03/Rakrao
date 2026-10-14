@@ -81,3 +81,10 @@ Family creation creates active creator membership, Creator and FamilyAdmin grant
 
 
 
+
+
+## Firestore persistence migration compatibility
+
+Phase A preserves the M1–M3 routes, DTOs, concealment, integer `ETag`/`If-Match` behavior, idempotency canonicalization, and rolling-hour 429 policy described above. Firebase UID remains separate from application User UUID and Person identity. The API accesses Firestore only through Infrastructure implementations of Application interfaces; browser clients receive authorized DTOs and never access protected collections directly.
+
+Important mutations and audit creates commit in one Firestore transaction. Actor membership/grants and the caller's expected metadata version are checked again on SDK retries. Supported Creator changes use the separate Family guard; privileged administrators remain outside that application invariant. Audit is application-create-only, not database-enforced administrator immutability. `/health/ready` now probes Firestore with a bounded, on-demand cached read; PostgreSQL is not a readiness dependency. No invitation, membership review, Person or claim endpoint is introduced by this migration.

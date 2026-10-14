@@ -6,18 +6,18 @@ RAKRAO (รากเรา) is a family relationship platform where people can a
 
 ## Selected architecture
 
-Browser: React + TypeScript + React Flow + ELK → Firebase Hosting → /api/** rewrite → Cloud Run: ASP.NET Core REST API → PostgreSQL on Cloud SQL and private Google Cloud Storage. Firebase Authentication supplies Google or phone OTP sign-in; the browser sends a Firebase ID token with API requests.
+Browser: React + TypeScript + React Flow + ELK → Firebase Hosting → /api/** rewrite → Cloud Run: ASP.NET Core REST API → Cloud Firestore Native mode. Private media storage remains a separately approved later feature. Firebase Authentication supplies Google or phone OTP sign-in; the browser sends a Firebase ID token with API requests.
 
 The API owns permission decisions and database mutations. The frontend renders authorized DTOs, not raw rows. A tree request specifies family, focus person, depth and filters. The API checks access, builds a bounded subgraph, applies visibility rules, then returns nodes and typed edges; client-side ELK lays out that subgraph. Person, family, membership, claim, relationship, media and audit modules live in one backend process with explicit boundaries. Family creation atomically creates an active membership and Creator/FamilyAdmin grants for its creator.
 
-Put the Firebase Hosting `/api/**` rewrite before the SPA catchall `** -> /index.html`. Use relative `/api` URLs and keep the prefix consistently at the API. Use `asia-southeast1` as the planning region for Cloud Run, Cloud SQL and GCS, stored in infrastructure configuration; recheck service availability, latency and residency before provisioning. Treat direct Cloud Run requests as untrusted. Bound connection pools and Cloud Run scaling to protect Cloud SQL.
+Put the Firebase Hosting `/api/**` rewrite before the SPA catchall `** -> /index.html`. Use relative `/api` URLs and keep the prefix consistently at the API. Use `asia-southeast1` as the planning region for Cloud Run and Firestore, stored in infrastructure configuration; recheck service availability, latency and residency before provisioning. Treat direct Cloud Run requests as untrusted. Use request-based billing, minimum instances zero, bounded concurrency/scaling and bounded Firestore query costs.
 
 ## Major decisions
 
 | Selection | Why | Alternatives | Tradeoff |
 |---|---|---|---|
 | Modular ASP.NET Core monolith | One deployable and transactions across workflows | Microservices; one function per feature | Modules require discipline; shared scaling initially |
-| PostgreSQL relational graph model | Constraints and recursive traversal suit genealogy and memberships | Graph database; fixed parent columns | Deep traversal needs bounds and indexes |
+| Firestore Native document persistence | Removes always-on database cost and supports atomic M1–M3 workflows | Historical PostgreSQL design | API transactions replace SQL constraints; privileged administrators bypass application invariants; later graph/search queries need explicit bounded document designs |
 | Global person plus family associations | One identity can appear in several families | Family-local duplicates with merging | Cross-family changes need approval and visibility policy |
 | Separate PersonName history | Repeated changes and former-name search need multiple records | Mutable `persons.full_name`; fixed old-name columns | Adds join, search and privacy filtering |
 | Typed relationship rows with history | Parentage and repeated unions stay queryable | Father/mother columns; generic unlabeled edges | More constraints and traversal logic |
@@ -37,7 +37,7 @@ The initial design assumed one mutable `persons.full_name`. The addendum superse
       src/RakRao.Api/        HTTP endpoints, composition, auth
       src/RakRao.Domain/     rules and typed identifiers
       src/RakRao.Application/ commands, queries, policies, DTOs
-      src/RakRao.Infrastructure/ EF Core, Firebase, GCS adapters
+      src/RakRao.Infrastructure/ Firestore persistence and Firebase adapters
       tests/RakRao.UnitTests/
       tests/RakRao.IntegrationTests/
       tests/web/                     component and browser tests
@@ -53,7 +53,7 @@ This is a proposal, not a scaffold. .NET namespaces use `RakRao.Api`, `RakRao.Do
 3. API authorizes the operation; reads filter each person, field and edge. Mutations write business rows and audit events in one transaction.
 4. Authorized media uploads use a short-lived grant to a private staging object. The API validates and processes it before it becomes a current photo. Reads recheck profile visibility.
 
-Use EF Core migrations, bounded PostgreSQL recursive CTEs, structured logs and request IDs. Apply timeouts, pagination, depth and node caps. Backups and restore drills, retention, export/deletion policy, monitoring and abuse controls are preproduction gates.
+Use versioned Firestore document mappings/indexes, retry-safe transactions, structured logs and request IDs. Later graph work requires bounded application traversal; SQL recursive CTEs are historical guidance. Apply timeouts, pagination, depth and node caps. Backups and restore drills, retention, export/deletion policy, monitoring and abuse controls are preproduction gates.
 
 ## Phase 0 decisions and remaining constraints
 
@@ -75,7 +75,14 @@ Open policy and measurement questions remain in [product-decisions.md](product-d
 
 - [Firebase Hosting rewrites](https://firebase.google.com/docs/hosting/full-config)
 - [Firebase ID token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens) and [.NET Admin SDK](https://firebase.google.com/docs/reference/admin/dotnet/class/firebase-admin/auth/abstract-firebase-auth)
-- [Cloud Run to Cloud SQL guidance](https://cloud.google.com/sql/docs/postgres/connect-run)
+- [Firestore transactions](https://firebase.google.com/docs/firestore/manage-data/transactions) and [Firestore IAM](https://firebase.google.com/docs/firestore/security/iam)
 - [React Flow layout guidance](https://reactflow.dev/learn/layouting/layouting)
 
 
+
+
+## Approved Phase A architecture change
+
+The reviewed migration supersedes PostgreSQL/EF Core and Cloud SQL staging while preserving the modular monolith, domain privacy rules and public M1–M3 API. Browser Security Rules deny all domain access; server SDKs use IAM and bypass those rules. Infrastructure owns deterministic UID/membership/grant pointers and explicit buffered transactions. Supported Creator changes serialize on a separate Family guard; metadata retains integer ETags. Audit is create-only through application architecture and atomic with important mutations. Privileged administrators can bypass both guarantees; this is explicitly accepted and is not database-trigger parity.
+
+PR CI uses Auth/Firestore emulators with no deployment identity or PostgreSQL. Delivery is Codex Cloud → GitHub → GitHub Actions → WIF → existing Artifact Registry/Cloud Run/Firestore/Hosting resources. Staging deployment is manually gated and not enabled/provisioned in Phase A. See [staging foundation](staging-foundation.md). M4 remains unstarted.
