@@ -108,6 +108,35 @@ describe('authentication shell', () => {
     expect(provisionMe).toHaveBeenCalledWith('verified-id-token');
   });
 
+  it('gives the authenticated provisioning state one meaningful heading', async () => {
+    const auth = new FakeAuth();
+    let finishProvisioning!: (value: MeResponse) => void;
+    render(
+      <AuthHome
+        auth={auth}
+        provisionMe={vi.fn(
+          () =>
+            new Promise<MeResponse>((resolve) => {
+              finishProvisioning = resolve;
+            }),
+        )}
+      />,
+    );
+
+    act(() => auth.emit(principal));
+    expect(await screen.findByRole('banner')).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'Loading your family space',
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/discover how we are connected/i)).toBeNull();
+
+    await act(async () => finishProvisioning(me));
+  });
+
   it('shows an error when sign-in fails', async () => {
     const auth = new FakeAuth();
     auth.google.mockRejectedValueOnce(new Error('popup closed'));

@@ -348,9 +348,12 @@ export default function AuthHome({
       onSignOut={() => void handleSignOut()}
     >
       {loading ? (
-        <p className="foundation-note" role="status">
-          Loading your family space…
-        </p>
+        <section className="loading-state">
+          <h1>Loading your family space</h1>
+          <p className="foundation-note" role="status">
+            Preparing your authorized Family context…
+          </p>
+        </section>
       ) : me ? (
         selectedFamily ? (
           <div className="overview-layout">

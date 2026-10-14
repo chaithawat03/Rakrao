@@ -1,7 +1,7 @@
 # RAKRAO UI foundation refresh design
 
-**Status:** Proposed for implementation review  
-**Baseline:** `main` at `6d731858d7112004770e0ae50c8bdd472b124900`  
+**Status:** Proposed for implementation review
+**Baseline:** `main` at `6d731858d7112004770e0ae50c8bdd472b124900`
 **Scope:** Frontend presentation and frontend tests only; documentation follows the implemented structure
 
 ## Intent

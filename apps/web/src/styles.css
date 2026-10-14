@@ -22,7 +22,7 @@
   --color-border: #c9cec2;
   --color-error-bg: #f7e7df;
   --color-error-text: #7a3123;
-  --color-focus: #d89558;
+  --color-focus: #b47a24;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -303,8 +303,8 @@ p {
 .app-header {
   display: grid;
   grid-template-areas:
-    'brand account'
-    'family nav';
+    'brand nav'
+    'family account';
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-4);
   align-items: center;
@@ -395,6 +395,10 @@ p {
   margin: 0 auto;
   padding: clamp(var(--space-6), 6vw, var(--space-8))
     clamp(var(--space-4), 4vw, var(--space-7));
+}
+
+.loading-state {
+  max-width: var(--content-readable);
 }
 
 .overview-layout {
