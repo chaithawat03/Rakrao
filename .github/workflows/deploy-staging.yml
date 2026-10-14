@@ -1,0 +1,165 @@
+name: Deploy existing staging
+
+# Phase A prepares this workflow only. Phase B must bootstrap and explicitly enable it.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_existing_staging:
+        description: 'Deploy to already bootstrapped staging (no resource bootstrap)'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-rakrao-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      inputs.confirm_existing_staging
+    environment: staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DEPLOY_ENABLED: ${{ vars.STAGING_DEPLOY_ENABLED }}
+      PROJECT_ID: ${{ vars.STAGING_GCP_PROJECT_ID }}
+      WIF_PROVIDER: ${{ vars.STAGING_WIF_PROVIDER }}
+      BUILD_SERVICE_ACCOUNT: ${{ vars.STAGING_BUILD_SERVICE_ACCOUNT }}
+      RUN_SERVICE_ACCOUNT: ${{ vars.STAGING_RUN_DEPLOY_SERVICE_ACCOUNT }}
+      DATA_SERVICE_ACCOUNT: ${{ vars.STAGING_FIRESTORE_DEPLOY_SERVICE_ACCOUNT }}
+      HOSTING_SERVICE_ACCOUNT: ${{ vars.STAGING_HOSTING_DEPLOY_SERVICE_ACCOUNT }}
+      RUNTIME_SERVICE_ACCOUNT: ${{ vars.STAGING_RUNTIME_SERVICE_ACCOUNT }}
+      ARTIFACT_REPOSITORY: ${{ vars.STAGING_ARTIFACT_REPOSITORY }}
+      HOSTING_SITE: ${{ vars.STAGING_HOSTING_SITE_ID }}
+      REGION: asia-southeast1
+      SERVICE: rakrao-api-staging
+      FIREBASE_CLI_DISABLE_UPDATE_CHECK: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate nonsecret Phase B configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_ENABLED" == true ]] || { echo 'Phase B bootstrap/deployment is not enabled' >&2; exit 1; }
+          for name in PROJECT_ID WIF_PROVIDER BUILD_SERVICE_ACCOUNT RUN_SERVICE_ACCOUNT DATA_SERVICE_ACCOUNT HOSTING_SERVICE_ACCOUNT RUNTIME_SERVICE_ACCOUNT ARTIFACT_REPOSITORY HOSTING_SITE; do
+            if [[ -z "${!name}" ]]; then echo "Missing GitHub staging variable: $name" >&2; exit 1; fi
+          done
+          [[ "$PROJECT_ID" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]
+          [[ "$ARTIFACT_REPOSITORY" =~ ^[a-z0-9][a-z0-9._-]*$ ]]
+          [[ "$HOSTING_SITE" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          [[ "$WIF_PROVIDER" =~ ^projects/[0-9]+/locations/global/workloadIdentityPools/[a-z0-9-]+/providers/[a-z0-9-]+$ ]]
+          for name in BUILD_SERVICE_ACCOUNT RUN_SERVICE_ACCOUNT DATA_SERVICE_ACCOUNT HOSTING_SERVICE_ACCOUNT RUNTIME_SERVICE_ACCOUNT; do
+            [[ "${!name}" == *"@$PROJECT_ID.iam.gserviceaccount.com" ]]
+          done
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Repeat required CI before deployment
+        run: |
+          set -euo pipefail
+          npm ci --prefix infra/firebase
+          dotnet restore RakRao.sln
+          dotnet build RakRao.sln --no-restore
+          infra/firebase/node_modules/.bin/firebase emulators:exec --project demo-rakrao --only auth,firestore 'dotnet test RakRao.sln --no-build --no-restore && npm --prefix infra/firebase run test:rules'
+          npm ci --prefix apps/web
+          npm --prefix apps/web run typecheck
+          npm --prefix apps/web run lint
+          npm --prefix apps/web run format:check
+          npm --prefix apps/web test
+      - name: Authenticate image builder through WIF
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.BUILD_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+      - name: Verify existing image repository and publish immutable image
+        run: |
+          set -euo pipefail
+          gcloud artifacts repositories describe "$ARTIFACT_REPOSITORY" --location="$REGION" --project="$PROJECT_ID"
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          IMAGE="$REGION-docker.pkg.dev/$PROJECT_ID/$ARTIFACT_REPOSITORY/rakrao-api:$GITHUB_SHA"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          DIGEST=$(gcloud artifacts docker images describe "$IMAGE" --format='value(image_summary.digest)')
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          echo "DEPLOY_IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/$ARTIFACT_REPOSITORY/rakrao-api@$DIGEST" >> "$GITHUB_ENV"
+      - name: Authenticate Firestore configuration deployer
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.DATA_SERVICE_ACCOUNT }}
+      - name: Verify existing database and deploy rules/indexes
+        run: |
+          set -euo pipefail
+          gcloud firestore databases describe --database='(default)' --project="$PROJECT_ID"
+          infra/firebase/node_modules/.bin/firebase deploy --only firestore --project "$PROJECT_ID" --non-interactive
+          ready=false
+          for attempt in $(seq 1 60); do
+            pending=$(gcloud firestore indexes composite list --database='(default)' --project="$PROJECT_ID" --filter='state!=READY' --format='value(name)')
+            if [[ -z "$pending" ]]; then ready=true; break; fi
+            sleep 10
+          done
+          [[ "$ready" == true ]] || { echo 'Firestore indexes are not ready' >&2; exit 1; }
+      - name: Authenticate Cloud Run deployer
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.RUN_SERVICE_ACCOUNT }}
+      - name: Update existing Cloud Run service
+        run: |
+          set -euo pipefail
+          gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID"
+          gcloud run deploy "$SERVICE" --image="$DEPLOY_IMAGE" --region="$REGION" --project="$PROJECT_ID" \
+            --service-account="$RUNTIME_SERVICE_ACCOUNT" --min=0 --max=1 --cpu=1 --memory=512Mi \
+            --concurrency=20 --timeout=60 --cpu-throttling --port=8080 \
+            --clear-cloudsql-instances --clear-vpc-connector \
+            --update-env-vars="ASPNETCORE_ENVIRONMENT=Staging,Firebase__ProjectId=$PROJECT_ID,Firestore__ProjectId=$PROJECT_ID,Firestore__DatabaseId=(default)" \
+            --remove-env-vars='FIRESTORE_EMULATOR_HOST,FIREBASE_AUTH_EMULATOR_HOST,ConnectionStrings__Default,RAKRAO_TEST_CONNECTION_STRING' --quiet
+          API_URL=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID" --format='value(status.url)')
+          curl --fail --silent --show-error --max-time 30 "$API_URL/health"
+          curl --fail --silent --show-error --max-time 30 "$API_URL/health/ready" | jq -e '.status == "ready"'
+          [[ "$(curl --silent --show-error --max-time 30 -o /dev/null -w '%{http_code}' "$API_URL/api/v1/me")" == 401 ]]
+      - name: Authenticate Firebase Hosting deployer
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.HOSTING_SERVICE_ACCOUNT }}
+      - name: Build and publish Hosting to the existing site
+        env:
+          VITE_API_BASE_URL: /api
+          VITE_FIREBASE_API_KEY: ${{ vars.STAGING_FIREBASE_WEB_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ vars.STAGING_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ env.PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ vars.STAGING_FIREBASE_WEB_APP_ID }}
+        run: |
+          set -euo pipefail
+          for name in VITE_FIREBASE_API_KEY VITE_FIREBASE_AUTH_DOMAIN VITE_FIREBASE_APP_ID; do
+            [[ -n "${!name}" ]] || { echo "Missing public Firebase Web configuration: $name" >&2; exit 1; }
+          done
+          infra/firebase/node_modules/.bin/firebase hosting:sites:list --project "$PROJECT_ID" --json > /tmp/rakrao-hosting-sites.json
+          jq -e --arg site "$HOSTING_SITE" '.result.sites | any(.name | endswith("/sites/" + $site))' /tmp/rakrao-hosting-sites.json
+          npm --prefix apps/web run build
+          node --input-type=module -e 'import fs from "node:fs"; const c=JSON.parse(fs.readFileSync("firebase.json")); c.hosting.site=process.env.HOSTING_SITE; fs.writeFileSync("firebase.staging.generated.json",JSON.stringify(c));'
+          infra/firebase/node_modules/.bin/firebase deploy --only hosting --config firebase.staging.generated.json --project "$PROJECT_ID" --non-interactive
+          [[ "$(curl --silent --show-error --max-time 30 -o /dev/null -w '%{http_code}' "https://$HOSTING_SITE.web.app/api/v1/me")" == 401 ]]
+          curl --fail --silent --show-error --max-time 30 "https://$HOSTING_SITE.web.app/" | grep -q RAKRAO
+          echo "Deployed commit $GITHUB_SHA using $DEPLOY_IMAGE" >> "$GITHUB_STEP_SUMMARY"

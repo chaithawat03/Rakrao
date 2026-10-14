@@ -1,118 +1,91 @@
 # รากเรา / RAKRAO
 
-RAKRAO (Our Roots) is a private-first family relationship platform. The repository contains the Phase 1 Milestone 1 foundation, Milestone 2 verified identity and audit baseline, and Milestone 3 family and scoped-role workflows. Invitations, Person records and trees belong to later milestones.
+RAKRAO (Our Roots) is a private-first family relationship platform. The repository implements Phase 1 Milestones 1–3: application foundation, verified identity/audit, and families with scoped roles. Milestone 4 (private invitations and reviewed membership) is **not started**. Person records, claims and trees remain later work.
 
-The backend is a modular ASP.NET Core monolith with Domain, Application, Infrastructure and API projects. PostgreSQL is the database. The web shell uses React and TypeScript. See [docs/architecture.md](docs/architecture.md), [docs/product-decisions.md](docs/product-decisions.md) and [docs/phase-1-plan.md](docs/phase-1-plan.md) for the approved design.
+The active architecture is **Firebase Hosting + Firebase Authentication + Cloud Run ASP.NET Core + Cloud Firestore**. The modular Domain/Application/Infrastructure boundaries and React/TypeScript frontend remain. PostgreSQL/EF Core and the earlier Cloud SQL staging proposal are superseded; no PostgreSQL, Neon or Docker database is required for acceptance.
 
-## Repository layout
+## Development prerequisites
 
-| Path | Purpose |
-|---|---|
-| `src/RakRao.Domain` | Domain boundary; no infrastructure dependency |
-| `src/RakRao.Application` | Application behavior and contracts |
-| `src/RakRao.Infrastructure` | EF Core and PostgreSQL integration |
-| `src/RakRao.Api` | HTTP composition, health checks and logging |
-| `apps/web` | React and TypeScript shell (`rakrao-web`) |
-| `tests` | Backend smoke and unit tests |
-| `infra/postgres` | Local database initialization |
-| `.github/workflows` | Build and test CI |
+- .NET SDK 10 and compatible ASP.NET Core runtime
+- Node.js >=22.12 and npm
+- Java 21 for the Firestore emulator
 
-## Prerequisites
+Use the existing checkout in an isolated Codex Cloud task; do not create another worktree unless explicitly requested. Do not assume local Windows files or credentials exist.
 
-- .NET SDK 10.0 and a compatible ASP.NET Core 10 runtime
-- Node.js 22.12 or later and npm 10
-- Docker with Compose for local PostgreSQL
-
-For local emulator development, no live Google Cloud access is needed. The passwords in `compose.yaml` and `appsettings.Development.json` are disposable local-only defaults. Keep real credentials outside the repository. Override the connection string with `ConnectionStrings__Default` or .NET user secrets when needed.
-
-## Start local PostgreSQL
-
-From the repository root in PowerShell:
-
-```powershell
-docker compose up -d postgres
-docker compose ps
+```bash
+npm ci --prefix apps/web
+npm ci --prefix infra/firebase
+bash infra/firebase/test-emulators.sh
 ```
 
-The first start creates `rakrao_dev` and the separate `rakrao_test` database. The database listens on `127.0.0.1:5432`. Stop it with `docker compose down`.
+The test script restores/builds the solution and runs backend and browser Security Rules tests under Firebase Auth/Firestore emulators. Emulator integration tests fail if the emulator is absent; they never silently skip or contact live Firestore. Tests use isolated `demo-` project IDs and need no Google Cloud credentials or SMS. The pinned CLI checks downloaded emulator integrity. Its download requires `storage.googleapis.com`; npm/NuGet use their normal package hosts. CI uses these same emulators, with no PostgreSQL service and no deployment identity.
 
-To **delete both local databases and start fresh**, run `docker compose down --volumes`, then `docker compose up -d postgres`. This removes the named local PostgreSQL volume. The initialization SQL only runs when that volume is empty.
+Frontend checks:
 
-## Backend setup and migrations
-
-```powershell
-dotnet restore RakRao.sln
-dotnet tool restore
-dotnet build RakRao.sln --no-restore
-$env:ASPNETCORE_ENVIRONMENT = 'Development'
-dotnet tool run dotnet-ef database update --project src/RakRao.Infrastructure --startup-project src/RakRao.Api
-dotnet run --project src/RakRao.Api --urls http://127.0.0.1:5080
-```
-
-In another terminal, check `http://127.0.0.1:5080/health` for API liveness and `/health/ready` for database connectivity. The initial migration creates EF Core migration tracking only. Milestone 2 adds `users` and append-only `audit_events`. Milestone 3 adds `families`, `family_memberships`, `role_assignments`, the audit Family foreign key, and a deferred PostgreSQL guard that rejects any active Family without an active Creator. Existing User and audit rows need no backfill: Milestone 2 creates no Families and its `audit_events.family_id` values are null. Before upgrading an independently modified database, check for non-null audit Family IDs with no Family row. Apply migrations in place; do not recreate development or staging data.
-
-When a later milestone has an approved schema change, create a migration with:
-
-```powershell
-$env:ASPNETCORE_ENVIRONMENT = 'Development'
-dotnet tool run dotnet-ef migrations add DescriptiveName --project src/RakRao.Infrastructure --startup-project src/RakRao.Api --output-dir Persistence/Migrations
-```
-
-Review the migration and data/backfill strategy before applying it. Do not use `EnsureCreated` against a migrated database.
-
-## Frontend setup
-
-```powershell
+```bash
 cd apps/web
-npm ci
 npm run typecheck
 npm run lint
-npm run build
+npm run format:check
 npm test
-npm run dev
+npm run build
 ```
 
-The shell is served at the URL printed by Vite. Its API base URL defaults to relative `/api`. The local Vite proxy forwards `/api` to `http://127.0.0.1:5080`; the proxy target lives in one development config file, not in components. Copy `apps/web/.env.example` to `apps/web/.env.local` and supply the Firebase Web app configuration. `VITE_` values are public browser configuration; never put secrets in them.
+## Run the application with emulators
 
-## Firebase Authentication setup
+Start emulators from the repository root:
 
-The existing `rakrao-dev` Google Cloud project is associated with Firebase and has one Web app, `RAKRAO Web Dev` (`1:723651832622:web:2719448385db17471e68bf`). Google and Phone sign-in are enabled. Authorized domains are `rakrao-dev.firebaseapp.com`, `rakrao-dev.web.app` and `127.0.0.1`; SMS is restricted to Thailand (`TH`). One fictional +66 test phone number is configured in Firebase Console, with its value and code kept private. The Google provider is represented in `firebase.json`, which preserves the Auth Emulator configuration; deploy only that provider configuration with `firebase deploy --only auth --project rakrao-dev` when it changes.
+```bash
+infra/firebase/node_modules/.bin/firebase emulators:start --only auth,firestore --project demo-rakrao
+```
 
-For live local development, obtain the Web app's public `apiKey`, `authDomain`, `projectId` and `appId` with `firebase apps:sdkconfig WEB 1:723651832622:web:2719448385db17471e68bf --project rakrao-dev` and put them in ignored `apps/web/.env.local`. Do not commit that file. The backend reads `Firebase__ProjectId` (Development defaults to `rakrao-dev`) and uses Application Default Credentials with the official Firebase Admin SDK. Run `gcloud auth application-default login` locally for development; do not use a downloaded service-account key in the repository. Keep fictional Phone test numbers and codes out of source control.
+In a second terminal at the repository root:
 
-For isolated local development, run `firebase emulators:start --only auth --project demo-rakrao`. Set `Firebase__ProjectId=demo-rakrao` and `FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099` in the API process environment, then set `VITE_FIREBASE_PROJECT_ID=demo-rakrao`, `VITE_FIREBASE_AUTH_EMULATOR_URL=http://127.0.0.1:9099` and non-secret demo Firebase Web configuration in `apps/web/.env.local`. Start the API and web app using the commands above. The backend refuses emulator mode outside Development. The emulator avoids live SMS; automated tests use a verifier double for endpoint behavior and an unsigned emulator-mode token to check the official Admin SDK adapter's claim boundary. CI sends no SMS and needs no Firebase secret.
+```bash
+ASPNETCORE_ENVIRONMENT=Development \
+Firebase__ProjectId=demo-rakrao \
+Firestore__ProjectId=demo-rakrao \
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 \
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
+dotnet run --project src/RakRao.Api --no-launch-profile --urls http://127.0.0.1:5080
+```
 
-After Google or phone sign-in, the browser sends the Firebase ID token as a bearer token to `POST /api/v1/me`. The API verifies the principal and provisions one application User; `GET /api/v1/me` returns `NEW_MEMBER` with an empty family list until a Family is created, then `ACTIVE_MEMBER` with authorized family summaries. An authenticated `GET` before provisioning returns 404. Neither sign-in method claims a Person or grants Family access. Phone verification uses Firebase's reCAPTCHA flow, and test phone numbers for live development must be configured in Firebase rather than committed to source.
+In a third terminal:
 
-## Milestone 3 family workflow
-
-Signed-in, provisioned Users can create a Family in the web shell. Creation writes the Family, active creator membership, Creator and FamilyAdmin grants, and one audit event in a single PostgreSQL transaction. The API resolves family access from active memberships and current grants. `GET /api/v1/families` and `GET /api/v1/families/{familyId}` expose only authorized Families; the web switcher uses those summaries and keeps its selection in the URL query. Creator and FamilyAdmin can edit family metadata using the returned version and `If-Match`; stale edits return 409. Creator can grant or revoke Creator and FamilyAdmin roles for active members, while FamilyAdmin can manage FamilyMember grants. The family row is locked for role changes, and a deferred database guard rejects removal of the last active Creator even through direct SQL.
-
-Family creation is limited to three per User per hour by `FamilyCreation:MaxPerHour` (override with `FamilyCreation__MaxPerHour`). The database audit count under a User row lock enforces the limit across API instances. A new request over the limit returns 429. The web client sends a stable `Idempotency-Key` on retry; the API stores hashes of the key and original request in the audit event and returns the original Family for the same User and request body, even after a later Family edit or the hourly limit is reached. Invitations and membership review are Milestone 4 and are not available yet; no membership approval or Person identity claim occurs during family creation.
-
-On this workstation, the npm user config forces offline mode and its proxy entries return HTTP 400. The existing approved environment proxy works with a command-local, empty npm user config. If the same condition occurs, run this from the repository root; `.npmrc.local` and `.npm-cache` are ignored by Git:
-
-```powershell
-New-Item -ItemType File -Path .npmrc.local -Force | Out-Null
+```bash
 cd apps/web
-npm ci --offline=false --userconfig ..\..\.npmrc.local --cache ..\..\.npm-cache
+VITE_FIREBASE_API_KEY=demo-api-key \
+VITE_FIREBASE_AUTH_DOMAIN=demo-rakrao.firebaseapp.com \
+VITE_FIREBASE_PROJECT_ID=demo-rakrao \
+VITE_FIREBASE_APP_ID=demo-app-id \
+VITE_FIREBASE_AUTH_EMULATOR_URL=http://127.0.0.1:9099 \
+npm run dev -- --port 5173 --strictPort
 ```
 
-This does not change system proxy settings or disable TLS validation. Coordinate with IT before changing the corporate npm configuration itself.
+These are public demo values, not live credentials. Vite forwards relative `/api` requests to port 5080. Both emulators are refused outside Development. Keep private local configuration ignored; public `VITE_` configuration must never contain secrets.
 
-## Backend tests
+Validate `/health` for liveness and `/health/ready` for a bounded Firestore read. Readiness uses an on-demand cached probe, not background polling. Protected `/api/v1/me` must return 401 without a valid token. An authenticated GET before provisioning returns 404; POST provisions one User, without a Person claim or Family membership.
 
-With PostgreSQL running, set the separate test database connection string and run all tests:
+## Persistence and safety
 
-```powershell
-$env:RAKRAO_TEST_CONNECTION_STRING = 'Host=localhost;Port=5432;Database=rakrao_test;Username=rakrao;Password=rakrao_local_dev_only'
-dotnet test RakRao.sln
-```
+Firestore Infrastructure implementations preserve UUID User/Family/membership/grant identifiers, UTC timestamps, nulls, integer metadata ETags and API DTOs. Firebase UID is distinct from User ID and Person ID. See [database design](docs/database-design.md) for collections, keys, transactions and indexes.
 
-Without PostgreSQL, run the unit and API health smoke tests:
+Family creation commits Family, active creator membership, Creator/Admin grants, invariant/uniqueness records, rolling-hour limit state, optional retry record and audit together. Requests above `FamilyCreation:MaxPerHour` (default three in a rolling hour) return 429. An idempotent retry is checked before throttling and survives later Family edits; reusing its key for different canonical details returns 409.
 
-```powershell
-dotnet test RakRao.sln --filter 'Category!=Database'
-```
+The API resolves current active membership and same-Family grants. Creator role changes serialize on a Family guard whose version is independent of metadata ETags. Supported mutations cannot remove the last effective Creator. Important business writes and create-only audit events share one retry-safe transaction.
 
-CI starts an isolated PostgreSQL service and runs the full backend suite. Frontend CI installs from the committed lockfile with `npm ci`, then runs typecheck, lint, formatting, build and tests. CI has no deployment job or cloud credentials.
+**Enforcement boundary:** these are application transaction guarantees. Privileged administrators using Firestore IAM/server SDKs can bypass them. Firestore browser Security Rules deny all domain access but do not constrain server SDKs. This is not parity with the historical PostgreSQL audit/Creator triggers. There are no normal application audit update/delete operations.
+
+## Cloud-first delivery
+
+Codex Cloud → GitHub → GitHub Actions → Google Cloud/Firebase. PR CI has no deployment credentials. Staging delivery uses GitHub OIDC/Workload Identity Federation and runtime Application Default Credentials, never service-account JSON keys or Firebase CI tokens.
+
+[Staging foundation](docs/staging-foundation.md) describes the manually gated prepared workflow, nonsecret configuration, IAM, existing-resource preflight, rollback, and Phase B bootstrap/live-verification requirements. Phase A provisions no infrastructure and does not merge automatically. The Cloud Run container listens on `0.0.0.0:$PORT`; staging uses `rakrao-api-staging` in `asia-southeast1`, request-based billing and minimum instances zero. Hosting routes `/api/**` before the SPA fallback.
+
+Near-zero fixed infrastructure cost is the goal, not a promise of zero usage charges. Cloud Run/Hosting integration needs billing; Firestore operations, image storage, traffic, logs and real Phone Authentication can incur charges. No Cloud SQL, VPC connector or always-on database is part of this architecture.
+
+## Historical evidence and data migration
+
+Existing EF migrations remain under `src/RakRao.Infrastructure/Persistence/Migrations` as excluded historical source. [Historical SQL design](docs/history/postgresql-database-design.md), Git history and optional `compose.yaml` preserve the prior implementation evidence. They are not active runtime/setup requirements. Do not run EF migrations for Firestore.
+
+Inventory authoritative persisted data before a separate import. If data exists, preserve UUIDs, timestamps, versions, grants and audit rows; verify UID uniqueness, references and effective Creator counts; freeze writes for cutover and retain a recoverable export. No Windows database or uncommitted workstation state is assumed or imported by Phase A.

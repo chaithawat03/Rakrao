@@ -1,6 +1,6 @@
 # Repository engineering rules
 
-Read [docs/product-decisions.md](docs/product-decisions.md) and the relevant design documents before changing behavior or schema. Keep the approved modular monolith and technology stack unless a measured requirement and reviewed decision change them. Do not silently replace architectural decisions; update the decision record and affected documents when a decision changes.
+Read [docs/product-decisions.md](docs/product-decisions.md) and the relevant design documents before changing behavior or schema. Keep the approved modular monolith. The reviewed Phase A stack is Firebase Hosting, Firebase Authentication, ASP.NET Core on Cloud Run, and Cloud Firestore; PostgreSQL/EF Core and Cloud SQL staging are superseded. Do not silently replace architectural decisions; update the decision record and affected documents when a decision changes.
 
 ## Product naming
 
@@ -18,7 +18,7 @@ Read [docs/product-decisions.md](docs/product-decisions.md) and the relevant des
 - A Person may belong to several Families. Shared core Person edits must pass the affected-family policy; local aliases belong to FamilyPerson.
 - Cross-family relationships stay unpublished until every affected Family authorizes publication. An edge never grants access to another Family.
 - All tree traversal is bounded by configurable depth, node count and execution timeout, with cycle detection.
-- Database schema changes require migrations and a reviewed data/backfill strategy. Important mutations require audit events without leaking hidden names, tokens or sensitive evidence into broad logs.
+- Firestore schema/index changes require a versioned document contract and reviewed data/backfill strategy; do not generate EF migrations for Firestore. Important mutations require audit events without leaking hidden names, tokens or sensitive evidence into broad logs.
 
 ## Security and privacy
 
@@ -35,3 +35,14 @@ Read [docs/product-decisions.md](docs/product-decisions.md) and the relevant des
 2. Check effects on database, migrations, API, UI, authorization, privacy, search, audit and tests. Preserve backward compatibility where practical.
 3. Explain the impact and proposed design before implementation. Update relevant documentation when assumptions change.
 4. Run appropriate verification before claiming work is complete. For documentation-only changes, check requested files, internal links, resolved decisions and contradictions.
+
+## Active Firestore and delivery rules
+
+- Firestore SDK calls and document mapping belong in Infrastructure behind Application interfaces, never controllers or Domain entities. Preserve UUIDs, UTC/null semantics and integer API versions.
+- Business mutations and their audit events share one retry-safe transaction. Allocate IDs outside callbacks, complete reads before writes, and perform no external side effects in callbacks.
+- Resolve active same-Family membership and grants inside mutation transactions. All supported effective Creator changes read/write the authoritative Family guard, independently of metadata ETags.
+- Audit is create-only through application architecture. Privileged IAM/server-SDK administrators are outside both audit immutability and Creator invariant guarantees; never claim PostgreSQL-trigger parity. Browser Firestore rules deny domain access, including authenticated clients; server SDKs bypass rules.
+- Acceptance uses Auth/Firestore emulators and cloud-first CI; Docker/PostgreSQL is not a workstation or staging acceptance requirement. SQL migrations are historical excluded source.
+- Codex Cloud → GitHub → GitHub Actions → Google Cloud/Firebase. Use OIDC/WIF and runtime ADC; never service-account JSON keys or Firebase CI tokens.
+- Phase A preserves M1–M3 and prepares delivery only. M4 stays private invitations/reviewed membership and is not started. Do not provision, bootstrap Phase B, merge main, or change external project identifiers without explicit authorization.
+- Each Codex cloud task is isolated: use the existing checkout, without creating another worktree unless explicitly requested.

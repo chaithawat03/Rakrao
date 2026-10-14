@@ -21,6 +21,9 @@ credentials/
 *.p12
 *.pfx
 *.pem
+gha-creds-*.json
+firebase.staging.generated.json
+*-debug.log
 
 # IDE and OS
 .vs/

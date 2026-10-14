@@ -1,0 +1,25 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "family_memberships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "family_memberships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "familyId", "order": "ASCENDING" },
+        { "fieldPath": "id", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    { "collectionGroup": "audit_events", "fieldPath": "safeDiff", "indexes": [] },
+    { "collectionGroup": "family_creation_limits", "fieldPath": "createdAt", "indexes": [] },
+    { "collectionGroup": "users", "fieldPath": "firebaseUid", "indexes": [] }
+  ]
+}

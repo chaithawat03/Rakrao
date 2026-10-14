@@ -3,7 +3,25 @@
     "auth": {
       "host": "127.0.0.1",
       "port": 9099
-    }
+    },
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8080
+    },
+    "ui": { "enabled": false },
+    "singleProjectMode": false
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "hosting": {
+    "public": "apps/web/dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      { "source": "/api/**", "run": { "serviceId": "rakrao-api-staging", "region": "asia-southeast1" } },
+      { "source": "**", "destination": "/index.html" }
+    ]
   },
   "auth": {
     "providers": {

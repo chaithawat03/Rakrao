@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.EntityFrameworkCore;
 using RakRao.Api;
 using RakRao.Application;
 using RakRao.Application.Families;
@@ -34,8 +33,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
-app.MapGet("/health/ready", async (RakRaoDbContext db, CancellationToken cancellationToken) =>
-    await db.Database.CanConnectAsync(cancellationToken)
+app.MapGet("/health/ready", async (FirestoreReadiness readiness, CancellationToken cancellationToken) =>
+    await readiness.CheckAsync(cancellationToken)
         ? Results.Ok(new { status = "ready" })
         : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 

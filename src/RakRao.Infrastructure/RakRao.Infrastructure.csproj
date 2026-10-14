@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\RakRao.Application\RakRao.Application.csproj" />
@@ -13,8 +13,11 @@
   <ItemGroup>
     <PackageReference Include="FirebaseAdmin" Version="3.7.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Google.Cloud.Firestore" Version="4.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- PostgreSQL migrations are retained only as historical evidence. -->
+    <Compile Remove="Persistence/Migrations/**/*.cs" />
+  </ItemGroup>
 </Project>
