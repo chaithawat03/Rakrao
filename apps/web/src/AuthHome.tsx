@@ -12,7 +12,7 @@ import type {
   AuthPrincipal,
   PhoneChallenge,
 } from './auth/gateway';
-import { productCopy } from './content';
+import { AppShell } from './ui/AppShell';
 import { SignedOutHome } from './ui/SignedOutHome';
 
 interface AuthHomeProps {
@@ -296,7 +296,7 @@ export default function AuthHome({
     (family) => family.id === selectedFamilyId,
   );
 
-  if (!me && (!signedIn || loading)) {
+  if (!signedIn) {
     return (
       <SignedOutHome
         loading={loading}
@@ -315,146 +315,107 @@ export default function AuthHome({
   }
 
   return (
-    <main className="page-shell">
-      <div className="brand-mark" aria-label={productCopy.brand}>
-        <span className="brand-symbol" aria-hidden="true">
-          ✳
-        </span>
-        <span>{productCopy.brand}</span>
-      </div>
-      <section className="welcome-card" aria-labelledby="welcome-title">
-        <p className="eyebrow">OUR ROOTS</p>
-        <h1 id="welcome-title">{productCopy.name}</h1>
-        <p className="tagline">{productCopy.tagline}</p>
-        {error && (
-          <p role="alert" className="auth-error">
-            {error}
-          </p>
-        )}
-        {me ? (
-          <div className="auth-panel">
-            <h2>Account ready</h2>
-            <p>{me.displayName || 'Your RAKRAO account'}</p>
-            {me.families.length === 0 ? (
-              <p className="muted">No family memberships yet.</p>
-            ) : (
-              <div className="family-section">
-                <label htmlFor="current-family">Current family</label>
-                <select
-                  id="current-family"
-                  value={selectedFamily?.id || ''}
-                  onChange={(event) => selectFamily(event.target.value)}
+    <AppShell
+      displayName={me?.displayName ?? null}
+      families={me?.families ?? []}
+      selectedFamilyId={selectedFamilyId}
+      busy={busy}
+      error={error}
+      onSelectFamily={selectFamily}
+      onSignOut={() => void handleSignOut()}
+    >
+      {loading ? (
+        <p className="foundation-note" role="status">
+          Loading your family space…
+        </p>
+      ) : me ? (
+        <div className="auth-panel">
+          {selectedFamily ? (
+            <section aria-label="Selected family" className="family-section">
+              <h1>{selectedFamily.name}</h1>
+              {selectedFamily.description && (
+                <p>{selectedFamily.description}</p>
+              )}
+              {selectedFamily.capabilities.includes('EDIT_FAMILY') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditName(selectedFamily.name);
+                    setEditDescription(selectedFamily.description || '');
+                    setEditingFamily(true);
+                  }}
                 >
-                  {me.families.map((family) => (
-                    <option key={family.id} value={family.id}>
-                      {family.name}
-                    </option>
-                  ))}
-                </select>
-                {selectedFamily && (
-                  <section aria-label="Selected family">
-                    <h3>{selectedFamily.name}</h3>
-                    {selectedFamily.description && (
-                      <p>{selectedFamily.description}</p>
-                    )}
-                    {selectedFamily.capabilities.includes('EDIT_FAMILY') && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditName(selectedFamily.name);
-                          setEditDescription(selectedFamily.description || '');
-                          setEditingFamily(true);
-                        }}
-                      >
-                        Edit family
-                      </button>
-                    )}
-                    {editingFamily &&
-                      selectedFamily.capabilities.includes('EDIT_FAMILY') && (
-                        <form
-                          onSubmit={(event) => void handleUpdateFamily(event)}
-                        >
-                          <label htmlFor="edit-family-name">
-                            Edit family name
-                          </label>
-                          <input
-                            id="edit-family-name"
-                            required
-                            maxLength={160}
-                            value={editName}
-                            onChange={(event) =>
-                              setEditName(event.target.value)
-                            }
-                          />
-                          <label htmlFor="edit-family-description">
-                            Edit description
-                          </label>
-                          <input
-                            id="edit-family-description"
-                            maxLength={2000}
-                            value={editDescription}
-                            onChange={(event) =>
-                              setEditDescription(event.target.value)
-                            }
-                          />
-                          <button type="submit" disabled={busy}>
-                            Save family
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setEditingFamily(false)}
-                          >
-                            Cancel
-                          </button>
-                        </form>
-                      )}
-                  </section>
+                  Edit family
+                </button>
+              )}
+              {editingFamily &&
+                selectedFamily.capabilities.includes('EDIT_FAMILY') && (
+                  <form onSubmit={(event) => void handleUpdateFamily(event)}>
+                    <label htmlFor="edit-family-name">Edit family name</label>
+                    <input
+                      id="edit-family-name"
+                      required
+                      maxLength={160}
+                      value={editName}
+                      onChange={(event) => setEditName(event.target.value)}
+                    />
+                    <label htmlFor="edit-family-description">
+                      Edit description
+                    </label>
+                    <input
+                      id="edit-family-description"
+                      maxLength={2000}
+                      value={editDescription}
+                      onChange={(event) =>
+                        setEditDescription(event.target.value)
+                      }
+                    />
+                    <button type="submit" disabled={busy}>
+                      Save family
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingFamily(false)}
+                    >
+                      Cancel
+                    </button>
+                  </form>
                 )}
-              </div>
-            )}
-            <form onSubmit={(event) => void handleCreateFamily(event)}>
-              <h3>Create a family</h3>
-              <label htmlFor="family-name">Family name</label>
-              <input
-                id="family-name"
-                required
-                maxLength={160}
-                value={familyName}
-                onChange={(event) => setFamilyName(event.target.value)}
-              />
-              <label htmlFor="family-description">Description</label>
-              <input
-                id="family-description"
-                maxLength={2000}
-                value={familyDescription}
-                onChange={(event) => setFamilyDescription(event.target.value)}
-              />
-              <button type="submit" disabled={busy}>
-                Create family
-              </button>
-            </form>
-            <button
-              type="button"
-              onClick={() => void handleSignOut()}
-              disabled={busy}
-            >
-              Sign out
+            </section>
+          ) : (
+            <section>
+              <h1>Your family space</h1>
+              <p className="muted">No family memberships yet.</p>
+            </section>
+          )}
+          <form onSubmit={(event) => void handleCreateFamily(event)}>
+            <h2>Create a family</h2>
+            <label htmlFor="family-name">Family name</label>
+            <input
+              id="family-name"
+              required
+              maxLength={160}
+              value={familyName}
+              onChange={(event) => setFamilyName(event.target.value)}
+            />
+            <label htmlFor="family-description">Description</label>
+            <input
+              id="family-description"
+              maxLength={2000}
+              value={familyDescription}
+              onChange={(event) => setFamilyDescription(event.target.value)}
+            />
+            <button type="submit" disabled={busy}>
+              Create family
             </button>
-          </div>
-        ) : (
-          <div className="auth-panel">
-            <h2>Account unavailable</h2>
-            <p className="muted">Sign out and try again.</p>
-            <button
-              type="button"
-              onClick={() => void handleSignOut()}
-              disabled={busy}
-            >
-              Sign out
-            </button>
-          </div>
-        )}
-      </section>
-    </main>
+          </form>
+        </div>
+      ) : (
+        <section className="auth-panel">
+          <h1>Account unavailable</h1>
+          <p className="muted">Sign out and try again.</p>
+        </section>
+      )}
+    </AppShell>
   );
 }
