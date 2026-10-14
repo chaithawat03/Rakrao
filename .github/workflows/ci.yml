@@ -74,5 +74,5 @@ jobs:
           docker run -d --name rakrao-ci -p 127.0.0.1:8087:8087 -e PORT=8087 rakrao-api:ci
           trap 'docker logs rakrao-ci; docker rm -f rakrao-ci' EXIT
           [[ "$(docker exec rakrao-ci id -u)" != 0 ]]
-          curl --fail --silent --show-error --retry 10 --retry-delay 1 --retry-connrefused --max-time 10 http://127.0.0.1:8087/health
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 --retry-all-errors --retry-max-time 60 --max-time 10 http://127.0.0.1:8087/health
           [[ "$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{http_code}' http://127.0.0.1:8087/api/v1/me)" == 401 ]]
