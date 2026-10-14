@@ -13,7 +13,14 @@ import type {
   PhoneChallenge,
 } from './auth/gateway';
 import { AppShell } from './ui/AppShell';
+import { CreateFamilyForm } from './ui/CreateFamilyForm';
+import { FamilyOverview } from './ui/FamilyOverview';
 import { SignedOutHome } from './ui/SignedOutHome';
+
+type FamilyFeedback = {
+  scope: 'create' | 'edit';
+  message: string;
+};
 
 interface AuthHomeProps {
   auth?: AuthGateway;
@@ -65,6 +72,9 @@ export default function AuthHome({
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [familyFeedback, setFamilyFeedback] = useState<FamilyFeedback | null>(
+    null,
+  );
   const [phoneNumber, setPhoneNumber] = useState('');
   const [code, setCode] = useState('');
   const [challenge, setChallenge] = useState<PhoneChallenge | null>(null);
@@ -84,6 +94,7 @@ export default function AuthHome({
           setBusy(false);
           creationAttempt.current = null;
           setError(null);
+          setFamilyFeedback(null);
           setChallenge(null);
           if (!principal) {
             setLoading(false);
@@ -123,6 +134,7 @@ export default function AuthHome({
           setBusy(false);
           creationAttempt.current = null;
           setChallenge(null);
+          setFamilyFeedback(null);
           setError('Authentication session could not be loaded.');
           setLoading(false);
         },
@@ -135,6 +147,7 @@ export default function AuthHome({
       setSelectedFamilyId(null);
       setBusy(false);
       creationAttempt.current = null;
+      setFamilyFeedback(null);
       setError('Firebase authentication is not configured.');
       setLoading(false);
     }
@@ -203,6 +216,7 @@ export default function AuthHome({
     const current = generation.current;
     setBusy(true);
     setError(null);
+    setFamilyFeedback(null);
     try {
       const idToken = await principal.getIdToken();
       const input = {
@@ -234,9 +248,13 @@ export default function AuthHome({
       selectFamily(created.id);
       setFamilyName('');
       setFamilyDescription('');
+      setFamilyFeedback(null);
     } catch {
       if (generation.current === current)
-        setError('Family creation failed. Please try again later.');
+        setFamilyFeedback({
+          scope: 'create',
+          message: 'Family creation failed. Please try again later.',
+        });
     } finally {
       if (generation.current === current) setBusy(false);
     }
@@ -245,6 +263,7 @@ export default function AuthHome({
   function selectFamily(id: string | null) {
     setSelectedFamilyId(id);
     setEditingFamily(false);
+    setFamilyFeedback(null);
     const url = new URL(window.location.href);
     if (id) url.searchParams.set('family', id);
     else url.searchParams.delete('family');
@@ -258,6 +277,7 @@ export default function AuthHome({
     const familyId = selectedFamily.id;
     setBusy(true);
     setError(null);
+    setFamilyFeedback(null);
     try {
       const token = await principal.getIdToken();
       const updated = await updateFamily(
@@ -280,13 +300,16 @@ export default function AuthHome({
           },
       );
       setEditingFamily(false);
+      setFamilyFeedback(null);
     } catch (failure) {
       if (generation.current === current)
-        setError(
-          failure instanceof Error && failure.message.endsWith('status 409')
-            ? 'Family details changed elsewhere. Reload this page before editing again.'
-            : 'Family update failed. Please try again.',
-        );
+        setFamilyFeedback({
+          scope: 'edit',
+          message:
+            failure instanceof Error && failure.message.endsWith('status 409')
+              ? 'Family details changed elsewhere. Reload this page before editing again.'
+              : 'Family update failed. Please try again.',
+        });
     } finally {
       if (generation.current === current) setBusy(false);
     }
@@ -329,87 +352,70 @@ export default function AuthHome({
           Loading your family space…
         </p>
       ) : me ? (
-        <div className="auth-panel">
-          {selectedFamily ? (
-            <section aria-label="Selected family" className="family-section">
-              <h1>{selectedFamily.name}</h1>
-              {selectedFamily.description && (
-                <p>{selectedFamily.description}</p>
-              )}
-              {selectedFamily.capabilities.includes('EDIT_FAMILY') && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditName(selectedFamily.name);
-                    setEditDescription(selectedFamily.description || '');
-                    setEditingFamily(true);
-                  }}
-                >
-                  Edit family
-                </button>
-              )}
-              {editingFamily &&
-                selectedFamily.capabilities.includes('EDIT_FAMILY') && (
-                  <form onSubmit={(event) => void handleUpdateFamily(event)}>
-                    <label htmlFor="edit-family-name">Edit family name</label>
-                    <input
-                      id="edit-family-name"
-                      required
-                      maxLength={160}
-                      value={editName}
-                      onChange={(event) => setEditName(event.target.value)}
-                    />
-                    <label htmlFor="edit-family-description">
-                      Edit description
-                    </label>
-                    <input
-                      id="edit-family-description"
-                      maxLength={2000}
-                      value={editDescription}
-                      onChange={(event) =>
-                        setEditDescription(event.target.value)
-                      }
-                    />
-                    <button type="submit" disabled={busy}>
-                      Save family
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingFamily(false)}
-                    >
-                      Cancel
-                    </button>
-                  </form>
-                )}
-            </section>
-          ) : (
-            <section>
-              <h1>Your family space</h1>
-              <p className="muted">No family memberships yet.</p>
-            </section>
-          )}
-          <form onSubmit={(event) => void handleCreateFamily(event)}>
-            <h2>Create a family</h2>
-            <label htmlFor="family-name">Family name</label>
-            <input
-              id="family-name"
-              required
-              maxLength={160}
-              value={familyName}
-              onChange={(event) => setFamilyName(event.target.value)}
+        selectedFamily ? (
+          <div className="overview-layout">
+            <FamilyOverview
+              family={selectedFamily}
+              editing={editingFamily}
+              editName={editName}
+              editDescription={editDescription}
+              busy={busy}
+              error={
+                familyFeedback?.scope === 'edit' ? familyFeedback.message : null
+              }
+              onStartEdit={() => {
+                setEditName(selectedFamily.name);
+                setEditDescription(selectedFamily.description || '');
+                setFamilyFeedback(null);
+                setEditingFamily(true);
+              }}
+              onCancelEdit={() => {
+                setEditingFamily(false);
+                setFamilyFeedback(null);
+              }}
+              onEditNameChange={setEditName}
+              onEditDescriptionChange={setEditDescription}
+              onSubmitEdit={(event) => void handleUpdateFamily(event)}
             />
-            <label htmlFor="family-description">Description</label>
-            <input
-              id="family-description"
-              maxLength={2000}
-              value={familyDescription}
-              onChange={(event) => setFamilyDescription(event.target.value)}
+            <CreateFamilyForm
+              name={familyName}
+              description={familyDescription}
+              busy={busy}
+              error={
+                familyFeedback?.scope === 'create'
+                  ? familyFeedback.message
+                  : null
+              }
+              priority="secondary"
+              onNameChange={setFamilyName}
+              onDescriptionChange={setFamilyDescription}
+              onSubmit={(event) => void handleCreateFamily(event)}
             />
-            <button type="submit" disabled={busy}>
-              Create family
-            </button>
-          </form>
-        </div>
+          </div>
+        ) : (
+          <section className="empty-family-state">
+            <p className="eyebrow">Begin your archive</p>
+            <h1>Create your family space</h1>
+            <p>
+              Start with a name and an optional description for your private
+              family space.
+            </p>
+            <CreateFamilyForm
+              name={familyName}
+              description={familyDescription}
+              busy={busy}
+              error={
+                familyFeedback?.scope === 'create'
+                  ? familyFeedback.message
+                  : null
+              }
+              priority="primary"
+              onNameChange={setFamilyName}
+              onDescriptionChange={setFamilyDescription}
+              onSubmit={(event) => void handleCreateFamily(event)}
+            />
+          </section>
+        )
       ) : (
         <section className="auth-panel">
           <h1>Account unavailable</h1>
