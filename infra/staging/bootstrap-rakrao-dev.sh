@@ -7,6 +7,7 @@ readonly INSPECTOR=rakraoStagingInspector
 readonly ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly FIREBASE="$ROOT/infra/firebase/node_modules/.bin/firebase"
 readonly RUNTIME="rakrao-api-runtime@$PROJECT_ID.iam.gserviceaccount.com"
+readonly DATABASE_CONDITION="resource.name == 'projects/$PROJECT_ID/databases/(default)'"
 readonly PRINCIPAL="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/attribute.repository_id/1401374063"
 readonly CONDITION="assertion.repository_id == '1401374063' && assertion.repository_owner_id == '29879036' && assertion.ref == 'refs/heads/main' && assertion.sub == 'repo:chaithawat03/Rakrao:environment:staging' && assertion.workflow_ref == 'chaithawat03/Rakrao/.github/workflows/deploy-staging.yml@refs/heads/main' && assertion.event_name == 'workflow_dispatch'"
 readonly MAPPING='google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.ref=assertion.ref,attribute.workflow_ref=assertion.workflow_ref,attribute.event_name=assertion.event_name'
@@ -158,6 +159,12 @@ for account in "${ACCOUNTS[@]}"; do
     fi
   fi
 done
+# Adding a narrower conditional binding cannot cancel an existing broader one.
+# Refuse drift; an administrator must separately review any removal/replacement.
+jq -e --arg member "serviceAccount:$RUNTIME" --arg expression "$DATABASE_CONDITION" '
+  all(.bindings[]? | select(.role == "roles/datastore.user" and any(.members[]?; . == $member));
+      .condition.expression == $expression and .condition.title == "rakrao-staging-default-database")
+' "$WORK/project_iam.json" >/dev/null || fail 'Existing runtime datastore.user grant is unconditional or differs from the approved database condition. Separate IAM review required; no binding removed.'
 read_array roles gc iam roles list --format=json
 ROLE_EXISTS="$(jq --arg name "projects/$PROJECT_ID/roles/$INSPECTOR" 'any(.[]; .name == $name)' "$WORK/roles.json")"
 if [[ "$ROLE_EXISTS" == true ]]; then
@@ -229,7 +236,7 @@ if [[ "$PROVIDER_EXISTS" != true ]]; then
 fi
 project_role() { gc projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$1@$PROJECT_ID.iam.gserviceaccount.com" --role="$2" --condition=None --quiet >/dev/null; }
 repo_role() { gc artifacts repositories add-iam-policy-binding "$REPOSITORY" --location="$REGION" --member="serviceAccount:$1@$PROJECT_ID.iam.gserviceaccount.com" --role="$2" --quiet >/dev/null; }
-gc projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$RUNTIME" --role=roles/datastore.user --condition="expression=resource.name == 'projects/$PROJECT_ID/databases/(default)',title=rakrao-staging-default-database" --quiet >/dev/null
+gc projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$RUNTIME" --role=roles/datastore.user --condition="expression=$DATABASE_CONDITION,title=rakrao-staging-default-database" --quiet >/dev/null
 repo_role rakrao-image-builder roles/artifactregistry.writer
 repo_role rakrao-run-deployer roles/artifactregistry.reader
 for account in "${ACCOUNTS[@]:1}"; do

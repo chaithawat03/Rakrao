@@ -45,6 +45,7 @@ if args[:3]==['iam','roles','describe']: out(s['roles'][0])
 if args[:3]==['iam','workload-identity-pools','list']: out(s.get('pools',[]))
 if args[:4]==['iam','workload-identity-pools','providers','list']: out(s.get('providers',[]))
 if args[:4]==['iam','workload-identity-pools','providers','describe']: out(s['providers'][0])
+if args[:2]==['projects','get-iam-policy']: out(s.get('project_iam',{'bindings':[]}))
 if 'get-iam-policy' in args: out({'bindings':[]})
 if args[:4]==['firestore','indexes','composite','list']:
  wanted=json.loads((Path(__file__).resolve().parents[1]/'firestore.indexes.json').read_text())
@@ -190,6 +191,27 @@ class BootstrapSafety(unittest.TestCase):
         self.assertNotIn(' create ', writes)
         self.assertNotIn('create-oidc',writes)
         self.assertNotIn('run deploy',writes)
+
+    def test_runtime_unconditional_or_different_database_grant_rejected(self):
+        for condition in [None, {'expression':'true','title':'broad'}, {'expression':"resource.name == 'projects/rakrao-dev/databases/other'",'title':'other'}]:
+            with self.subTest(condition=condition):
+                binding={'role':'roles/datastore.user','members':['serviceAccount:rakrao-api-runtime@rakrao-dev.iam.gserviceaccount.com']}
+                if condition is not None:
+                    binding['condition']=condition
+                self.state['project_iam']={'bindings':[binding]}
+                self.write_state()
+                self.rejected()
+
+    def test_runtime_approved_condition_allows_apply_and_rerun(self):
+        self.state['project_iam']={'bindings':[{
+            'role':'roles/datastore.user',
+            'members':['serviceAccount:rakrao-api-runtime@rakrao-dev.iam.gserviceaccount.com'],
+            'condition':{'expression':"resource.name == 'projects/rakrao-dev/databases/(default)'",'title':'rakrao-staging-default-database'}
+        }]}
+        self.write_state()
+        for _ in range(2):
+            result=self.run_script(APPLY)
+            self.assertEqual(result.returncode,0,result.stderr)
 
     def test_existing_provider_drift_stops_before_writes(self):
         result=self.run_script(APPLY)

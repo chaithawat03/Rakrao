@@ -126,6 +126,9 @@ when the inventory API is disabled. No other API cleanup is automated.
 Five dedicated identities use the user-specified IDs. Runtime receives
 `roles/datastore.user` under a condition limiting `resource.name` to the default
 database; this still grants delete permissions and is not audit immutability.
+Existing direct runtime `roles/datastore.user` bindings must have exactly the approved
+database expression and condition title; unconditional or different bindings stop
+without removing any IAM. Adding a narrow grant would not cancel broader access.
 A custom runtime role is deferred until real permission telemetry justifies one.
 The four deployment accounts get Service Usage Consumer and narrowly bound WIF
 impersonation. Builder gets repository writer; Run deployer gets repository reader,
