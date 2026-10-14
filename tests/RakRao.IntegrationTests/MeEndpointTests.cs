@@ -3,35 +3,15 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.EntityFrameworkCore;
+using Google.Cloud.Firestore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Npgsql;
-using RakRao.Application.Identity;
-using RakRao.Infrastructure.Persistence;
 
 namespace RakRao.IntegrationTests;
 
-[Collection("PostgreSQL")]
 public class MeEndpointTests
 {
-    private static WebApplicationFactory<Program> Factory(string? connectionString = null, ILoggerProvider? loggerProvider = null) => new WebApplicationFactory<Program>()
-        .WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureTestServices(services =>
-            {
-                services.RemoveAll<IFirebaseIdTokenVerifier>();
-                services.AddSingleton<IFirebaseIdTokenVerifier>(new FakeVerifier());
-                if (loggerProvider is not null) services.AddLogging(logging => logging.AddProvider(loggerProvider));
-                if (connectionString is not null)
-                {
-                    services.RemoveAll<DbContextOptions<RakRaoDbContext>>();
-                    services.AddDbContext<RakRaoDbContext>(options => options.UseNpgsql(connectionString));
-                }
-            });
-        });
+    private static WebApplicationFactory<Program> Factory(string? projectId = null, ILoggerProvider? loggerProvider = null) => FirestoreFixture.Factory(projectId, loggerProvider);
 
     [Theory]
     [InlineData(null)]
@@ -55,17 +35,11 @@ public class MeEndpointTests
     }
 
     [Fact]
-    public void Test_factory_uses_its_explicit_database_connection()
+    public void Test_factory_uses_its_explicit_firestore_project()
     {
-        const string connectionString = "Host=127.0.0.1;Port=5441;Database=rk_factory_test;Username=test_user;Password=test_password";
-        using var factory = Factory(connectionString);
+        using var factory = Factory("demo-rakrao-explicit");
         using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<RakRaoDbContext>();
-        var actual = new NpgsqlConnectionStringBuilder(db.Database.GetDbConnection().ConnectionString);
-
-        Assert.True(actual.Database == "rk_factory_test" && actual.Port == 5441 &&
-            actual.Username == "test_user" && actual.Password == "test_password",
-            "The API test factory did not use its supplied database connection string.");
+        Assert.Equal("demo-rakrao-explicit", scope.ServiceProvider.GetRequiredService<FirestoreDb>().ProjectId);
     }
 
     [Fact]
@@ -87,12 +61,7 @@ public class MeEndpointTests
     [Trait("Category", "Database")]
     public async Task Provisioning_is_idempotent_and_writes_one_audit_event()
     {
-        var connectionString = Environment.GetEnvironmentVariable("RAKRAO_TEST_CONNECTION_STRING");
-        Assert.False(string.IsNullOrWhiteSpace(connectionString));
-        using var factory = Factory(connectionString);
-        await using (var scope = factory.Services.CreateAsyncScope())
-            await scope.ServiceProvider.GetRequiredService<RakRaoDbContext>().Database.MigrateAsync();
-
+        using var factory = Factory();
         using var client = factory.CreateClient();
         var uid = $"test-{Guid.NewGuid():N}";
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", uid);
@@ -123,19 +92,14 @@ public class MeEndpointTests
         Assert.Equal("NEW_MEMBER", user.OnboardingState);
         Assert.Empty(user.Families);
         await using var checkScope = factory.Services.CreateAsyncScope();
-        var db = checkScope.ServiceProvider.GetRequiredService<RakRaoDbContext>();
-        Assert.Equal(1, await db.Users.CountAsync(u => u.FirebaseUid == uid));
-        Assert.Equal(0, await db.Users.CountAsync(u => u.FirebaseUid == "spoofed-uid"));
-        Assert.Equal(1, await db.AuditEvents.CountAsync(a => a.TargetId == user.Id && a.Action == "USER_PROVISIONED"));
-        Assert.Equal("provision-check", await db.AuditEvents.Where(a => a.TargetId == user.Id)
-            .Select(a => a.RequestId).SingleAsync());
-    }
-
-    private sealed class FakeVerifier : IFirebaseIdTokenVerifier
-    {
-        public Task<VerifiedFirebaseUser?> VerifyAsync(string token, CancellationToken cancellationToken) =>
-            Task.FromResult<VerifiedFirebaseUser?>(token.StartsWith("test-", StringComparison.Ordinal)
-                ? new VerifiedFirebaseUser(token, "Test User") : null);
+        var db = checkScope.ServiceProvider.GetRequiredService<FirestoreDb>();
+        Assert.Equal(1, await FirestoreFixture.Count(db, "users", "firebaseUid", uid));
+        Assert.Equal(0, await FirestoreFixture.Count(db, "users", "firebaseUid", "spoofed-uid"));
+        var audits = await db.Collection("audit_events").WhereEqualTo("targetId", user.Id.ToString()).GetSnapshotAsync();
+        Assert.Single(audits);
+        Assert.Equal("USER_PROVISIONED", audits[0].GetValue<string>("action"));
+        Assert.Equal("provision-check", audits[0].GetValue<string>("requestId"));
+        Assert.Single((await db.Collection("firebase_uid_mappings").GetSnapshotAsync()).Documents);
     }
 
     private sealed record ProblemResponse(string Code, string RequestId);
