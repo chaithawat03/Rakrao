@@ -13,6 +13,7 @@ import type {
   PhoneChallenge,
 } from './auth/gateway';
 import { productCopy } from './content';
+import { SignedOutHome } from './ui/SignedOutHome';
 
 interface AuthHomeProps {
   auth?: AuthGateway;
@@ -295,6 +296,24 @@ export default function AuthHome({
     (family) => family.id === selectedFamilyId,
   );
 
+  if (!me && (!signedIn || loading)) {
+    return (
+      <SignedOutHome
+        loading={loading}
+        busy={busy}
+        error={error}
+        phoneNumber={phoneNumber}
+        code={code}
+        challengePending={challenge !== null}
+        onPhoneNumberChange={setPhoneNumber}
+        onCodeChange={setCode}
+        onGoogle={() => void handleGoogle()}
+        onSendCode={(event) => void handleSendCode(event)}
+        onVerifyCode={(event) => void handleVerifyCode(event)}
+      />
+    );
+  }
+
   return (
     <main className="page-shell">
       <div className="brand-mark" aria-label={productCopy.brand}>
@@ -312,9 +331,7 @@ export default function AuthHome({
             {error}
           </p>
         )}
-        {loading ? (
-          <p className="foundation-note">Connecting your account…</p>
-        ) : me ? (
+        {me ? (
           <div className="auth-panel">
             <h2>Account ready</h2>
             <p>{me.displayName || 'Your RAKRAO account'}</p>
@@ -424,7 +441,7 @@ export default function AuthHome({
               Sign out
             </button>
           </div>
-        ) : signedIn ? (
+        ) : (
           <div className="auth-panel">
             <h2>Account unavailable</h2>
             <p className="muted">Sign out and try again.</p>
@@ -435,50 +452,6 @@ export default function AuthHome({
             >
               Sign out
             </button>
-          </div>
-        ) : (
-          <div className="auth-panel">
-            <h2>Sign in</h2>
-            <button
-              type="button"
-              onClick={() => void handleGoogle()}
-              disabled={busy}
-            >
-              Continue with Google
-            </button>
-            <div className="auth-divider">or use your phone</div>
-            <form onSubmit={(event) => void handleSendCode(event)}>
-              <label htmlFor="phone-number">Phone number</label>
-              <input
-                id="phone-number"
-                type="tel"
-                autoComplete="tel"
-                placeholder="+66…"
-                required
-                value={phoneNumber}
-                onChange={(event) => setPhoneNumber(event.target.value)}
-              />
-              <div id="recaptcha-container" />
-              <button type="submit" disabled={busy}>
-                Send code
-              </button>
-            </form>
-            {challenge && (
-              <form onSubmit={(event) => void handleVerifyCode(event)}>
-                <label htmlFor="verification-code">Verification code</label>
-                <input
-                  id="verification-code"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  required
-                  value={code}
-                  onChange={(event) => setCode(event.target.value)}
-                />
-                <button type="submit" disabled={busy}>
-                  Verify code
-                </button>
-              </form>
-            )}
           </div>
         )}
       </section>
