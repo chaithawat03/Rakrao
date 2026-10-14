@@ -1,23 +1,47 @@
 # UI design
 
+## Implemented M1–M3 foundation
+
+The current frontend separates the public authentication experience from the authenticated application structure. Signed-out users see the `รากเรา` / `RAKRAO` identity, the product tagline, a privacy-oriented introduction, and the existing Google and Phone authentication flows. Signed-in users enter a compact application shell where the authorized Family is the primary context. The public hero is not repeated inside the application.
+
+The authenticated shell contains a skip link, banner, primary navigation, Family context, account identity, and main landmark. `Overview` is the only navigation item and is marked as the current page. One authorized Family appears as static context; multiple authorized Families use a labelled native select; zero Families omit the switcher. Sign out remains directly reachable. People, Tree, Invitations, search, and review controls are future functionality and do not render in the M1–M3 foundation.
+
+The active Family name is the page `h1`. The overview displays only the API-provided description, or neutral fallback copy when no description exists. Its Family archive section explains where future people and relationships will appear without showing invented counts, activity, or interactive future features. `Manage family` appears only when the API supplies `EDIT_FAMILY`. Additional Family creation uses a secondary native disclosure; accounts with no Families receive an open first-Family form as the primary task. Create and edit failures remain sanitized and appear beside the relevant form.
+
+`AuthHome` remains the authentication, state, URL, and API coordinator. Presentation is divided among `BrandMark`, `SignedOutHome`, `AppShell`, `FamilySwitcher`, `AccountMenu`, `FamilyOverview`, `FamilyEditor`, and `CreateFamilyForm`. These components receive data and callbacks and do not call Firebase or the API. This preserves authentication restoration, session generation guards, `/api/v1/me`, authorized Family selection, the `family` URL query, creation idempotency, edit version handling, stale-edit guidance, and capability checks.
+
+## Visual system and responsive composition
+
+The implemented CSS uses custom properties for a warm cream canvas, warm-white and quiet surfaces, deep green interaction color, earth accents, semantic feedback, spacing, radii, shallow shadow, focus, and content widths. The local font stack starts with Thai-capable faces and loads no remote font. Controls are at least 44 CSS pixels high, long Thai and Latin names wrap, and the layouts avoid horizontal overflow.
+
+- At `390×844`, the public introduction stays concise above authentication. The application header uses compact rows, and Family Overview, management, and creation follow one readable column.
+- At `768×1024`, spacing expands while the logical reading and tab order remain unchanged. The Family context stays prominent and forms use the available width without becoming a narrow phone card.
+- At `1366×768`, the public screen uses a balanced split. The application places the archive and Family management in an asymmetric two-column overview with useful content above the fold.
+- At `1440×900`, the application reaches its wide content limit and uses the additional height for spacing rather than oversized controls or dashboard cards.
+
+The page has one meaningful `h1` in every rendered state. Form controls retain programmatic labels, the Family switcher is explicitly labelled, the skip link becomes visible on focus, and all interactive elements have a high-contrast `:focus-visible` ring. Errors use `role="alert"`, connecting/loading feedback uses status semantics, decorative connection lines are hidden from assistive technology, and reduced-motion preferences disable nonessential motion.
+
+For local review, `visual-review.html?state=<scenario>` renders presentation-only fixtures for `signed-out`, `phone-verification`, `editable`, `editing`, `readonly`, `multiple`, and `empty`. This HTML entry is for development review only: production `index.html`, `main.tsx`, and `App.tsx` do not import it, and the production build excludes it. Browser review covers the four required viewport sizes, horizontal overflow, touch target size, Family switching, editor opening, and keyboard focus.
+
 ## Product identity in the interface
 
 Use `รากเรา` as the Thai user-facing product name and `RAKRAO` where an English/romanized brand is needed. The working tagline is “Discover how we are connected.” Treat it as editable product copy, not a fixed architectural string. Domain component names such as FamilySwitcher, FamilyTree and PersonProfile remain descriptive and do not take a brand prefix.
-## Navigation and key screens
 
-Authenticated shell: family switcher, search, tree, person profile, membership status and account menu. There is no global people, family or relationship directory and no public person search. An account can switch among authorized families; the current family is explicit in the URL and heading. Any authenticated application User can create a Family from the account shell; creation immediately opens that Family with Creator and FamilyAdmin capabilities. NewMember onboarding opens an existing family through an invitation link, then guides the applicant through a membership request with identifying and relationship information. The request status screen shows pending, more information requested, approved or rejected, with a clear next action. Family admins have a review queue and can approve, reject or ask for more information with an audit reason. A separate claim flow links the account to an existing Person after review.
+## Future navigation and key screens (M4+)
+
+Later milestones may extend the authenticated shell with search, tree, person profile, membership status, invitations, and review workflows. There is no global people, family or relationship directory and no public person search. NewMember onboarding is expected to open an existing family through an invitation link, then guide the applicant through a membership request with identifying and relationship information. The planned request status screen shows pending, more information requested, approved or rejected, with a clear next action. Family admins will have a review queue and can approve, reject or ask for more information with an audit reason. A separate planned claim flow links the account to an existing Person after review.
 
 A person card shows permitted photo, current primary display name (or explicit family alias), partial birth information, deceased status and basic relationship summary. The profile page labels the current primary name and lists visible previous names, then adds family context, partner episodes, parentage and edit controls where permitted. Unknown facts say “Unknown” rather than displaying empty or invented values. Privacy filtering occurs in the API; the UI also avoids offering controls the caller cannot use, using capabilities returned by the API. Minor records follow conservative visibility and show no automatic account-claim action.
 
-## Desktop/notebook tree
+## Future desktop/notebook tree (M4+)
 
 Show a larger bounded tree canvas with React Flow pan, zoom, fit-to-view, person selection and keyboard access. A persistent search/focus control finds an authorized person, and generation filters request a new bounded subgraph. ELK lays out the returned nodes, with parent-child direction visually distinct from union connections. A selected card opens a details panel; expanding branches requests more authorized nodes. Preserve focus and camera position where possible when relayout happens. Use visual cues for biological, adoptive and step parentage, partnerships, ended unions and deceased people; provide text labels and legend, not color alone.
 
-## Smartphone tree
+## Future smartphone tree (M4+)
 
 Default to a focus-person view: selected person, parents, optional grandparents, siblings, partners and children. Fetch only a small neighborhood and offer explicit “show another generation” or branch expansion. Large touch targets, fixed focus/search action and bottom sheet for details keep the graph usable. Pinch zoom and pan are supported, but every key action also has a tap-based alternative. Switching family retains or resets focus explicitly; never silently show a person from another family.
 
-## Name history presentation and editing
+## Future name history presentation and editing (M4+)
 
 Affected frontend components: PersonCard, PersonProfile, NameHistoryList, PersonNameEditor, FamilyPersonSearch, TreePersonNode and the accessible relationship list. These are proposed component responsibilities, not a required file structure.
 
@@ -45,6 +69,3 @@ Provide loading skeletons for tree/profile, empty family and no-results states, 
 | Person profile separate from card | Keeps tree readable | All details in nodes | Extra navigation |
 | Text list paired with visual graph | Accessible and useful when layout fails | Graph-only view | Two presentations to maintain |
 | Separate membership and claim flows | Joining a family and proving person identity are different | Single combined approval | More steps for applicants and admins |
-
-
-

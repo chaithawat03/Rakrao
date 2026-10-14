@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AuthHome from './AuthHome';
@@ -85,14 +86,55 @@ describe('authentication shell', () => {
 
   it('provisions through the API after a Firebase session appears', async () => {
     const auth = new FakeAuth();
-    const provisionMe = vi.fn(async () => me);
+    const provisionMe = vi.fn(async () => ({ ...me, families: [family] }));
     render(<AuthHome auth={auth} provisionMe={provisionMe} />);
     await act(async () => {
       auth.emit(principal);
     });
-    expect(await screen.findByText(/account ready/i)).toBeTruthy();
+    expect(await screen.findByRole('banner')).toBeTruthy();
+    expect(screen.getByRole('navigation')).toBeTruthy();
+    expect(
+      screen
+        .getByRole('link', { name: 'Overview' })
+        .getAttribute('aria-current'),
+    ).toBe('page');
     expect(screen.getByText('Test User')).toBeTruthy();
+    expect(screen.getAllByText('Our family').length).toBeGreaterThan(0);
+    expect(screen.getByText('Current family')).toBeTruthy();
+    expect(
+      screen.queryByRole('combobox', { name: /current family/i }),
+    ).toBeNull();
+    expect(screen.queryByText(/discover how we are connected/i)).toBeNull();
     expect(provisionMe).toHaveBeenCalledWith('verified-id-token');
+  });
+
+  it('gives the authenticated provisioning state one meaningful heading', async () => {
+    const auth = new FakeAuth();
+    let finishProvisioning!: (value: MeResponse) => void;
+    render(
+      <AuthHome
+        auth={auth}
+        provisionMe={vi.fn(
+          () =>
+            new Promise<MeResponse>((resolve) => {
+              finishProvisioning = resolve;
+            }),
+        )}
+      />,
+    );
+
+    act(() => auth.emit(principal));
+    expect(await screen.findByRole('banner')).toBeTruthy();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'Loading your family space',
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/discover how we are connected/i)).toBeNull();
+
+    await act(async () => finishProvisioning(me));
   });
 
   it('shows an error when sign-in fails', async () => {
@@ -121,6 +163,8 @@ describe('authentication shell', () => {
     });
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(screen.getByRole('button', { name: /sign out/i })).toBeTruthy();
+    expect(screen.getByText(/sign out and try again/i)).toBeTruthy();
+    expect(screen.queryByText(/discover how we are connected/i)).toBeNull();
     expect(screen.queryByText('api unavailable')).toBeNull();
   });
 
@@ -130,10 +174,10 @@ describe('authentication shell', () => {
     await act(async () => {
       auth.emit(principal);
     });
-    expect(await screen.findByText(/account ready/i)).toBeTruthy();
+    expect(await screen.findByRole('banner')).toBeTruthy();
     act(() => auth.emitError());
     expect(screen.getByRole('alert')).toBeTruthy();
-    expect(screen.queryByText(/account ready/i)).toBeNull();
+    expect(screen.queryByRole('banner')).toBeNull();
   });
 
   it('sends and confirms a phone code using the auth gateway', async () => {
@@ -167,7 +211,7 @@ describe('authentication shell', () => {
     expect(
       await screen.findByRole('button', { name: /continue with google/i }),
     ).toBeTruthy();
-    expect(screen.queryByText(/account ready/i)).toBeNull();
+    expect(screen.queryByRole('banner')).toBeNull();
   });
 
   it('creates a family and selects it for the signed-in user', async () => {
@@ -181,6 +225,9 @@ describe('authentication shell', () => {
       />,
     );
     await act(async () => auth.emit(principal));
+    expect(
+      (await screen.findByText('Create your family')).closest('details')?.open,
+    ).toBe(true);
     fireEvent.change(await screen.findByLabelText(/family name/i), {
       target: { value: 'Our family' },
     });
@@ -225,7 +272,7 @@ describe('authentication shell', () => {
     );
     await act(async () => auth.emit(principal));
     expect(
-      await screen.findByRole('button', { name: /edit family/i }),
+      await screen.findByRole('button', { name: /manage family/i }),
     ).toBeTruthy();
     fireEvent.change(screen.getByLabelText(/current family/i), {
       target: { value: 'family-2' },
@@ -233,7 +280,7 @@ describe('authentication shell', () => {
     expect(
       screen.getByRole('heading', { name: 'Another family' }),
     ).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /edit family/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /manage family/i })).toBeNull();
   });
 
   it('updates family details only through the selected family control', async () => {
@@ -255,7 +302,7 @@ describe('authentication shell', () => {
     );
     await act(async () => auth.emit(principal));
     fireEvent.click(
-      await screen.findByRole('button', { name: /edit family/i }),
+      await screen.findByRole('button', { name: /manage family/i }),
     );
     fireEvent.change(screen.getByLabelText(/edit family name/i), {
       target: { value: 'New family name' },
@@ -292,7 +339,8 @@ describe('authentication shell', () => {
       target: { value: 'Our family' },
     });
     fireEvent.click(screen.getByRole('button', { name: /create family/i }));
-    await screen.findByRole('alert');
+    const createForm = screen.getByLabelText(/family name/i).closest('form')!;
+    expect(await within(createForm).findByRole('alert')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /create family/i }));
     await screen.findByRole('heading', { name: 'Our family' });
     expect(createFamily).toHaveBeenCalledTimes(2);
@@ -368,11 +416,14 @@ describe('authentication shell', () => {
     );
     await act(async () => auth.emit(principal));
     fireEvent.click(
-      await screen.findByRole('button', { name: /edit family/i }),
+      await screen.findByRole('button', { name: /manage family/i }),
     );
+    const editForm = screen
+      .getByLabelText(/edit family name/i)
+      .closest('form')!;
     fireEvent.click(screen.getByRole('button', { name: /save family/i }));
     expect(
-      await screen.findByText(/family details changed elsewhere/i),
+      await within(editForm).findByText(/family details changed elsewhere/i),
     ).toBeTruthy();
     expect(screen.queryByText(/status 409/i)).toBeNull();
   });
