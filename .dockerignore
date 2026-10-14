@@ -1,0 +1,16 @@
+.git
+.tools
+.dotnet-home
+.npm-cache
+**/node_modules
+**/bin
+**/obj
+**/dist
+**/coverage
+**/.env*
+**/*-debug.log
+**/appsettings.*.Local.json
+credentials
+.secrets
+gha-creds-*.json
+firebase.staging.generated.json
