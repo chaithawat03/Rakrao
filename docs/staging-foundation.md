@@ -2,6 +2,8 @@
 
 ## Scope and status
 
+Phase A has since merged into main `6d731858d7112004770e0ae50c8bdd472b124900`, with main CI `38534766759` verified. [Phase B bootstrap preparation](phase-b-bootstrap.md) now targets the explicitly approved existing project `rakrao-dev` / `723651832622`; manual Cloud Shell execution and live verification remain pending. The following Phase A narrative is retained as historical preparation context.
+
 Phase A implements the M1–M3 Firestore application migration and prepares CI/CD. Baseline main is `9aacb465231eba9c392d35992ae184162bb6e9b0`; work stays on `architecture/firestore-staging`. No cloud resource is provisioned, no merge is automatic, and M4 (private invitations and reviewed membership) remains unstarted. Live staging verification and WIF/resource bootstrap belong to separately authorized Phase B.
 
 Target: Firebase Hosting + Firebase Authentication + Cloud Run ASP.NET Core 10 + Cloud Firestore Native. PostgreSQL, Cloud SQL, Neon and local Docker/PostgreSQL acceptance are superseded. Existing SQL migration sources/design remain historical evidence. Do not assume any Windows workstation database, uncommitted file or credential exists.
