@@ -1,0 +1,12 @@
+[
+  {
+    "name": "delete-reviewed-obsolete",
+    "action": { "type": "Delete" },
+    "condition": { "tagState": "tagged", "tagPrefixes": ["obsolete-"], "olderThan": "1209600s" }
+  },
+  {
+    "name": "keep-recent-ten",
+    "action": { "type": "Keep" },
+    "mostRecentVersions": { "keepCount": 10 }
+  }
+]
