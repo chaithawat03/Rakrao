@@ -32,6 +32,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Staging bootstrap offline safety tests
+        run: python3 infra/staging/test_bootstrap.py
       - run: npm ci --prefix infra/firebase
       - run: dotnet restore RakRao.sln
       - run: dotnet build RakRao.sln --no-restore
