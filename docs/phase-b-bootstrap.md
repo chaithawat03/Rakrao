@@ -2,15 +2,15 @@
 
 ## Recovered authority
 
-Main is `6d731858d7112004770e0ae50c8bdd472b124900`. Main CI `38534766759` passed backend, frontend and container. Phase A is complete. Phase B is in bootstrap preparation, not live-verified; M4 is not started. Application and deployment workflow behavior have not been changed by this preparation.
+Main is `adc5afa41e5def8774f6ef43b594618ecea49b7d`. Phase A is complete. Phase B staging infrastructure is provisioned, WIF-backed deployment has been verified, and the UI Foundation Refresh passed live acceptance. Deployment run `38654400608` successfully published the same main SHA through Firestore, Cloud Run and Firebase Hosting. Full authenticated M2/M3 live acceptance and rollback evidence remain pending, so Phase B is not yet fully VERIFIED. M4 is not started.
 
 Read [bootstrap script and operator instructions](../infra/staging/README.md) and [staging foundation](staging-foundation.md). The executable artifact is `infra/staging/bootstrap-rakrao-dev.sh`. **Codex must never run it against Google Cloud.** The project administrator reviews the concrete plan and executes it in Google Cloud Shell. Do not send Codex tokens, service-account keys, ADC files or private Phone test credentials.
 
 ## Known state versus planned state
 
-GitHub repository numeric ID `1401374063`, owner ID `29879036`, and main CI were reconfirmed. The GitHub environments-list API returned zero environments, so `staging` does not currently exist. Creating/enabling it is deferred until successful bootstrap-state verification.
+GitHub repository numeric ID `1401374063` and owner ID `29879036` remain the immutable repository identity used by the WIF trust boundary. The protected `staging` GitHub Environment and its nonsecret variables are configured, and successful workflow dispatches have authenticated through WIF without long-lived service-account keys.
 
-No Google Cloud identity is attached to this Codex task. No live Google Cloud resource inventory was performed. In particular, Cloud SQL count, Firestore mode/location, Artifact Registry, IAM, WIF, Run revisions and Hosting releases are **unknown until Cloud Shell inventory**, not assumed absent. Hosting `rakrao-dev` is the intended reuse candidate from historical inventory.
+Cloud Shell inventory and apply established Firestore Native `(default)` in `asia-southeast1`, Artifact Registry repository `rakrao-staging`, dedicated deployment/runtime service accounts, WIF pool/provider, Cloud Run service `rakrao-api-staging`, and reuse of Hosting site `rakrao-dev`. The bootstrap code must remain aligned with the live WIF environment claim and Hosting deployer's service-level Cloud Run read access.
 
 Official Google/Firebase locations/pricing documentation requests were blocked by managed egress HTTP 403 during preparation. Required documentation domains were saved in the cloud-environment draft. Current Cloud SDK 589.0.0 command definitions were independently downloaded from official `dl.google.com` and checksum-verified for offline CLI validation. This validates command syntax, not live regional availability, prices or project permissions.
 
@@ -26,7 +26,7 @@ Official Google/Firebase locations/pricing documentation requests were blocked b
 | Run limits | Minimum zero, maximum one, 1 vCPU, 512 MiB, request-based CPU, concurrency 20, timeout 60s, PORT 8080, no Cloud SQL/VPC connector/load balancer |
 | Runtime | Dedicated `rakrao-api-runtime`, staging project IDs, default database, attached-identity ADC |
 | Hosting | Inventory and reuse `rakrao-dev`; do not create a duplicate site or deploy Hosting/Auth during bootstrap |
-| WIF | Pool `rakrao-staging`, provider `github-staging`; immutable repo/owner IDs, main, exact workflow, staging subject and manual-dispatch event |
+| WIF | Pool `rakrao-staging`, provider `github-staging`; immutable repo/owner IDs, main, protected `staging` environment claim, exact workflow and manual-dispatch event |
 | GitHub | Leave staging deployment disabled until B3 inventory/permissions review; no workflow dispatch during preparation |
 
 The hello placeholder is not the RAKRAO API and must not be counted as M1–M3 acceptance. Only the later main deployment through WIF replaces it with the SHA-built immutable API digest.
@@ -51,7 +51,7 @@ Five dedicated accounts, created only on verified absence:
 - `rakrao-firestore-deployer@rakrao-dev.iam.gserviceaccount.com`
 - `rakrao-hosting-deployer@rakrao-dev.iam.gserviceaccount.com`
 
-Runtime uses `roles/datastore.user` conditioned to the default database. Builder gets writer on the one repository; Run deployer gets repository reader, service-scoped `roles/run.developer` and `roles/iam.serviceAccountUser` only on runtime. Firestore deployer gets index/rules administration; Hosting deployer gets Hosting administration. Four deploy accounts receive quota-consumer access and restricted WIF impersonation; runtime receives no WIF trust.
+Runtime uses `roles/datastore.user` conditioned to the default database. Builder gets writer on the one repository; Run deployer gets repository reader, service-scoped `roles/run.developer` and `roles/iam.serviceAccountUser` only on runtime. Firestore deployer gets index/rules administration; Hosting deployer gets Hosting administration plus service-scoped `roles/run.viewer` on `rakrao-api-staging` so Firebase Hosting can validate the Cloud Run rewrite during finalization. Four deploy accounts receive quota-consumer access and restricted WIF impersonation; runtime receives no WIF trust.
 
 One narrowly defined `rakraoStagingInspector` custom role supplies four read-only metadata permissions needed by Firebase/database CLI inspection without broad Firebase Viewer/Admin. Exact permissions and effective-IAM verification are in the script/README. Dedicated-account user-managed keys, known broad privileges, provider drift and unrelated cleanup policy drift stop execution for review. Inherited/group/conditional effective IAM still requires administrator review; successful bindings alone do not prove least privilege or WIF usability.
 

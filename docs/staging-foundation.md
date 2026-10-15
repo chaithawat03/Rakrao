@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-Phase A has since merged into main `6d731858d7112004770e0ae50c8bdd472b124900`, with main CI `38534766759` verified. [Phase B bootstrap preparation](phase-b-bootstrap.md) now targets the explicitly approved existing project `rakrao-dev` / `723651832622`; manual Cloud Shell execution and live verification remain pending. The following Phase A narrative is retained as historical preparation context.
+Phase A is complete. Current main is `adc5afa41e5def8774f6ef43b594618ecea49b7d`. [Phase B bootstrap](phase-b-bootstrap.md) has provisioned the approved project `rakrao-dev` / `723651832622`; WIF-backed Cloud Run/Hosting deployment and UI live acceptance are verified. Full authenticated M2/M3 live acceptance and rollback evidence remain pending, so Phase B is not yet fully VERIFIED and M4 remains NOT STARTED. The following Phase A narrative is retained as historical preparation context.
 
 Phase A implements the M1–M3 Firestore application migration and prepares CI/CD. Baseline main is `9aacb465231eba9c392d35992ae184162bb6e9b0`; work stays on `architecture/firestore-staging`. No cloud resource is provisioned, no merge is automatic, and M4 (private invitations and reviewed membership) remains unstarted. Live staging verification and WIF/resource bootstrap belong to separately authorized Phase B.
 
@@ -44,7 +44,7 @@ Current workflow expects the accounts in the staging project and the default Fir
 
 ## WIF trust bootstrap requirements
 
-Google Cloud IAM, Security Token Service and IAM Credentials APIs must be available. Create a global Workload Identity Pool and OIDC provider with issuer `https://token.actions.githubusercontent.com`. Map subject, repository_id, repository_owner_id, ref, environment/subject, event and workflow claims.
+Google Cloud IAM, Security Token Service and IAM Credentials APIs must be available. Create a global Workload Identity Pool and OIDC provider with issuer `https://token.actions.githubusercontent.com`. Map subject, repository_id, repository_owner_id, ref, event and workflow claims. The provider condition checks the protected GitHub Environment directly with `assertion.environment`.
 
 Verified GitHub repository identity: `chaithawat03/Rakrao`, repository ID `1401374063`, owner ID `29879036`. Bind trust to these immutable numeric IDs, `refs/heads/main`, the approved deploy workflow and protected `staging` Environment; exclude pull-request contexts, forks and other workflows. Example provider condition skeleton (adapt to actual mapped token claims):
 
@@ -52,7 +52,7 @@ Verified GitHub repository identity: `chaithawat03/Rakrao`, repository ID `14013
 assertion.repository_id == '1401374063' &&
 assertion.repository_owner_id == '29879036' &&
 assertion.ref == 'refs/heads/main' &&
-assertion.sub == 'repo:chaithawat03/Rakrao:environment:staging' &&
+assertion.environment == 'staging' &&
 assertion.workflow_ref == 'chaithawat03/Rakrao/.github/workflows/deploy-staging.yml@refs/heads/main' &&
 assertion.event_name == 'workflow_dispatch'
 ```
@@ -69,7 +69,7 @@ These are minimum intended predefined roles/scopes to validate during Phase B; a
 | Image builder | `roles/artifactregistry.writer` on the one image repository |
 | Run deployer | `roles/run.developer` for the existing service, image repository reader, and `roles/iam.serviceAccountUser` on only the runtime account |
 | Firestore config deployer | `roles/datastore.indexAdmin` and `roles/firebaserules.admin`; required database/project inspection permissions |
-| Hosting deployer | `roles/firebasehosting.admin`; Firebase CLI needs `firebase.projects.get` and site inspection permissions |
+| Hosting deployer | `roles/firebasehosting.admin`, metadata inspector permissions, and service-scoped `roles/run.viewer` on `rakrao-api-staging` so Hosting can validate the Cloud Run rewrite |
 | Cloud Run service agent | Standard managed Cloud Run service-agent role; repository reader additionally if cross-project images are selected later |
 
 Add `roles/serviceusage.serviceUsageConsumer` when required by the actual CLI/quota flow. Confirm effective `firebase.projects.get`, `datastore.databases.get` and Cloud Run update permissions. Do not grant Authentication Admin merely to verify Firebase ID tokens. No Secret Manager access is required by the shipped emulator/keyless persistence configuration. New secret needs require their own inventory and scoped grant.

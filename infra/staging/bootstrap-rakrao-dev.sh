@@ -7,9 +7,10 @@ readonly INSPECTOR=rakraoStagingInspector
 readonly ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 readonly FIREBASE="$ROOT/infra/firebase/node_modules/.bin/firebase"
 readonly RUNTIME="rakrao-api-runtime@$PROJECT_ID.iam.gserviceaccount.com"
+readonly HOSTING_DEPLOYER="rakrao-hosting-deployer@$PROJECT_ID.iam.gserviceaccount.com"
 readonly DATABASE_CONDITION="resource.name == 'projects/$PROJECT_ID/databases/(default)'"
 readonly PRINCIPAL="principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/attribute.repository_id/1401374063"
-readonly CONDITION="assertion.repository_id == '1401374063' && assertion.repository_owner_id == '29879036' && assertion.ref == 'refs/heads/main' && assertion.sub == 'repo:chaithawat03/Rakrao:environment:staging' && assertion.workflow_ref == 'chaithawat03/Rakrao/.github/workflows/deploy-staging.yml@refs/heads/main' && assertion.event_name == 'workflow_dispatch'"
+readonly CONDITION="assertion.repository_id == '1401374063' && assertion.repository_owner_id == '29879036' && assertion.ref == 'refs/heads/main' && assertion.environment == 'staging' && assertion.workflow_ref == 'chaithawat03/Rakrao/.github/workflows/deploy-staging.yml@refs/heads/main' && assertion.event_name == 'workflow_dispatch'"
 readonly MAPPING='google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.ref=assertion.ref,attribute.workflow_ref=assertion.workflow_ref,attribute.event_name=assertion.event_name'
 readonly INSPECT_PERMISSIONS='datastore.databases.getMetadata,firebase.projects.get,resourcemanager.projects.get,serviceusage.services.get'
 readonly ACCOUNTS=(rakrao-api-runtime rakrao-image-builder rakrao-run-deployer rakrao-firestore-deployer rakrao-hosting-deployer)
@@ -108,11 +109,13 @@ if [[ "$REPO_EXISTS" == true ]]; then
   }
   read_json repository_iam gc artifacts repositories get-iam-policy "$REPOSITORY" --location="$REGION" --format=json
 fi
+HOSTING_RUN_VIEWER_BOUND=false
 read_array services gc run services list --region="$REGION" --platform=managed --format=json
 RUN_EXISTS="$(jq --arg service "$SERVICE" 'any(.[]; .metadata.name == $service)' "$WORK/services.json")"
 if [[ "$RUN_EXISTS" == true ]]; then
   read_json run gc run services describe "$SERVICE" --region="$REGION" --format=json
   read_json run_iam gc run services get-iam-policy "$SERVICE" --region="$REGION" --format=json
+  HOSTING_RUN_VIEWER_BOUND="$(jq --arg member "serviceAccount:$HOSTING_DEPLOYER" 'any(.bindings[]?; .role == "roles/run.viewer" and any(.members[]?; . == $member))' "$WORK/run_iam.json")"
   # Existing service is never redeployed here. Require an administrator to review
   # its ADC identity, cost/network settings and current rollback image first.
   jq -e --arg sa "$RUNTIME" '
@@ -137,6 +140,7 @@ read_json hosting "$FIREBASE" hosting:sites:list --project "$PROJECT_ID" --json 
 jq -e --arg site "projects/$PROJECT_ID/sites/$PROJECT_ID" --arg suffix "/sites/$PROJECT_ID" '.status == "success" and any(.result.sites[]; .name | endswith($suffix))' "$WORK/hosting.json" >/dev/null || fail 'Expected existing Hosting site rakrao-dev unavailable; do not create a duplicate.'
 read_array accounts gc iam service-accounts list --format=json
 read_json project_iam gc projects get-iam-policy "$PROJECT_ID" --format=json
+jq -e --arg member "serviceAccount:$HOSTING_DEPLOYER" 'all(.bindings[]? | select(.role == "roles/run.viewer"); all(.members[]?; . != $member))' "$WORK/project_iam.json" >/dev/null || fail 'Hosting deployer must not have project-wide roles/run.viewer; grant it only on rakrao-api-staging.'
 for account in "${ACCOUNTS[@]}"; do
   email="$account@$PROJECT_ID.iam.gserviceaccount.com"
   if jq -e --arg email "$email" 'any(.[]; .email == $email)' "$WORK/accounts.json" >/dev/null; then
@@ -203,9 +207,9 @@ Plan (no authentication secrets included):
   Runtime: datastore.user limited by database resource-name condition
   Builder: repository writer; Run deployer: service developer + repository reader + actAs runtime only
   Firestore deployer: project indexAdmin + firebaserules.admin + inspector
-  Hosting deployer: project firebasehosting.admin + inspector
+  Hosting deployer: project firebasehosting.admin + inspector; service run.viewer existing=$HOSTING_RUN_VIEWER_BOUND
   Deployment accounts: serviceUsageConsumer; restricted workloadIdentityUser on each account
-  WIF: pool=$POOL provider=$PROVIDER; repository/owner IDs, main, workflow, staging subject, dispatch enforced
+  WIF: pool=$POOL provider=$PROVIDER; repository/owner IDs, main, protected staging environment claim, exact workflow, dispatch enforced
   Retention: delete only administrator-marked obsolete- tagged images older than 14 days; keep 10 most recent/package
   Cost: usage charges apply; no always-on resource. Current regional pricing review REQUIRED.
   Optional SQL API disable requested: $DISABLE_SQL (sql-component never automatically disabled)
@@ -253,6 +257,7 @@ if [[ "$RUN_EXISTS" != true ]]; then
 fi
 gc run services add-iam-policy-binding "$SERVICE" --region="$REGION" --member=allUsers --role=roles/run.invoker --quiet >/dev/null
 gc run services add-iam-policy-binding "$SERVICE" --region="$REGION" --member="serviceAccount:rakrao-run-deployer@$PROJECT_ID.iam.gserviceaccount.com" --role=roles/run.developer --quiet >/dev/null
+gc run services add-iam-policy-binding "$SERVICE" --region="$REGION" --member="serviceAccount:$HOSTING_DEPLOYER" --role=roles/run.viewer --quiet >/dev/null
 gc artifacts repositories set-cleanup-policies "$REPOSITORY" --location="$REGION" --policy="$ROOT/infra/staging/cleanup-policy.json" --no-dry-run --quiet
 "$FIREBASE" deploy --only firestore --project "$PROJECT_ID" --non-interactive
 ready=false

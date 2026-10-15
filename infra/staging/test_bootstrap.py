@@ -46,6 +46,7 @@ if args[:3]==['iam','workload-identity-pools','list']: out(s.get('pools',[]))
 if args[:4]==['iam','workload-identity-pools','providers','list']: out(s.get('providers',[]))
 if args[:4]==['iam','workload-identity-pools','providers','describe']: out(s['providers'][0])
 if args[:2]==['projects','get-iam-policy']: out(s.get('project_iam',{'bindings':[]}))
+if args[:4]==['run','services','get-iam-policy','rakrao-api-staging']: out(s.get('run_iam',{'bindings':[]}))
 if 'get-iam-policy' in args: out({'bindings':[]})
 if args[:4]==['firestore','indexes','composite','list']:
  wanted=json.loads((Path(__file__).resolve().parents[1]/'firestore.indexes.json').read_text())
@@ -176,14 +177,17 @@ class BootstrapSafety(unittest.TestCase):
         writes = (self.root/'writes').read_text()
         state = json.loads((self.root/'state.json').read_text())
         provider = state['providers'][0]
-        for required in ["assertion.repository_id == '1401374063'", "assertion.repository_owner_id == '29879036'", "assertion.ref == 'refs/heads/main'", "assertion.sub == 'repo:chaithawat03/Rakrao:environment:staging'", "assertion.workflow_ref == 'chaithawat03/Rakrao/.github/workflows/deploy-staging.yml@refs/heads/main'", "assertion.event_name == 'workflow_dispatch'"]:
+        for required in ["assertion.repository_id == '1401374063'", "assertion.repository_owner_id == '29879036'", "assertion.ref == 'refs/heads/main'", "assertion.environment == 'staging'", "assertion.workflow_ref == 'chaithawat03/Rakrao/.github/workflows/deploy-staging.yml@refs/heads/main'", "assertion.event_name == 'workflow_dispatch'"]:
             self.assertIn(required, provider['attributeCondition'])
+        self.assertNotIn("assertion.sub == 'repo:chaithawat03/Rakrao:environment:staging'", provider['attributeCondition'])
         self.assertEqual(writes.count('--role=roles/iam.workloadIdentityUser'),4)
         self.assertEqual(writes.count('/attribute.repository_id/1401374063'),4)
         for forbidden in ['roles/owner','roles/editor','roles/iam.serviceAccountTokenCreator','roles/iam.serviceAccountKeyAdmin','--force','services disable']:
             self.assertNotIn(forbidden,writes)
         self.assertIn('--min=0 --max=1',writes)
         self.assertIn('--only firestore',writes)
+        self.assertIn('run services add-iam-policy-binding rakrao-api-staging --region=asia-southeast1 --member=serviceAccount:rakrao-hosting-deployer@rakrao-dev.iam.gserviceaccount.com --role=roles/run.viewer', writes)
+        self.assertNotIn('projects add-iam-policy-binding rakrao-dev --member=serviceAccount:rakrao-hosting-deployer@rakrao-dev.iam.gserviceaccount.com --role=roles/run.viewer', writes)
         (self.root/'writes').unlink()
         result = self.run_script(APPLY)
         self.assertEqual(result.returncode,0,result.stderr)
@@ -212,6 +216,28 @@ class BootstrapSafety(unittest.TestCase):
         for _ in range(2):
             result=self.run_script(APPLY)
             self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_project_wide_hosting_run_viewer_is_rejected(self):
+        self.state['project_iam']={'bindings':[{
+            'role':'roles/run.viewer',
+            'members':['serviceAccount:rakrao-hosting-deployer@rakrao-dev.iam.gserviceaccount.com']
+        }]}
+        self.write_state()
+        self.assertIn('grant it only on rakrao-api-staging', self.rejected().stderr)
+
+    def test_existing_service_reports_hosting_run_viewer_binding(self):
+        self.state['runs']=[{
+            'metadata':{'name':'rakrao-api-staging','annotations':{'run.googleapis.com/minScale':'0','run.googleapis.com/maxScale':'1'}},
+            'spec':{'template':{'metadata':{'annotations':{}},'spec':{'serviceAccountName':'rakrao-api-runtime@rakrao-dev.iam.gserviceaccount.com','containerConcurrency':20,'timeoutSeconds':60,'containers':[{'resources':{'limits':{'cpu':'1','memory':'512Mi'}},'ports':[{'containerPort':8080}]}]}}}
+        }]
+        self.state['run_iam']={'bindings':[{
+            'role':'roles/run.viewer',
+            'members':['serviceAccount:rakrao-hosting-deployer@rakrao-dev.iam.gserviceaccount.com']
+        }]}
+        self.write_state()
+        result=self.run_script()
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('service run.viewer existing=true', result.stdout)
 
     def test_existing_provider_drift_stops_before_writes(self):
         result=self.run_script(APPLY)

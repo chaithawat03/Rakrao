@@ -6,11 +6,13 @@ Google Cloud Shell. No Google tokens, downloaded keys, copied ADC files or Fireb
 CI tokens belong in Codex, GitHub variables or this repository. This script is not
 an install/start script for the Codex environment.
 
-The fixed target is `rakrao-dev` / `723651832622` / `asia-southeast1`. This preparation
-has only offline mocked validation; no live resource, WIF, billing, regional pricing
-or M1–M3 verification has occurred. Google pricing/location web pages were inaccessible
-from the preparation environment. The required current administrator review below
-is **unfulfilled**, not implied by the offline SDK syntax checks.
+The fixed target is `rakrao-dev` / `723651832622` / `asia-southeast1`. The staging
+resources have now been provisioned and the keyless GitHub Actions path has been
+verified by successful live deployments. UI live acceptance has also passed. The
+bootstrap artifact remains an administrator-only recovery/recreation tool: its
+location/pricing and effective-IAM review flags are still human attestations, not
+claims made by offline tests. Full authenticated M2/M3 live acceptance and rollback
+evidence remain pending, so Phase B is not yet fully VERIFIED.
 
 ## Cloud Shell prerequisites
 
@@ -135,13 +137,19 @@ impersonation. Builder gets repository writer; Run deployer gets repository read
 service-level Run Developer, and Service Account User on the runtime account only.
 Firestore deployer gets index admin and rules admin at project scope, because
 Firebase rules releases and the deployment APIs use project scope. Hosting deployer
-gets Hosting Admin. These two accounts receive a four-permission metadata inspector
+gets Hosting Admin plus service-scoped `roles/run.viewer` on `rakrao-api-staging`
+only; Firebase Hosting validates the Cloud Run rewrite during version finalization
+and needs `run.services.get`. The script rejects a project-wide Run Viewer grant for
+this account. These two accounts receive a four-permission metadata inspector
 custom role (`datastore.databases.getMetadata`, `firebase.projects.get`,
 `resourcemanager.projects.get`, `serviceusage.services.get`). The custom role avoids
 broad Firebase viewer or datastore data-reading roles just for CLI inspection.
 
 WIF uses numeric repository `1401374063`, owner `29879036`, main ref, the exact
-`deploy-staging.yml` workflow, staging subject and workflow_dispatch event. The
+`deploy-staging.yml` workflow, the protected `staging` environment claim and the
+`workflow_dispatch` event. The environment is checked directly as
+`assertion.environment == 'staging'`; the failed legacy hard-coded environment
+`assertion.sub` condition is not authoritative. The
 restricted repository principalSet is bound on the four deployment accounts only.
 The script refuses extra providers in the pool and exact provider-condition/mapping
 drift, including allowed audiences. It never rewrites existing trust to make it
